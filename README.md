@@ -22,9 +22,23 @@
 
 ## Экраны
 
+### iPhone
+
 [![Фокус дня, аналитика и настройки MonoTask](docs/screenshots/overview.jpg)](docs/screenshots/overview.jpg)
 
 Скриншоты из симулятора iPhone с демонстрационными данными. Нажмите на изображение, чтобы открыть в полном размере.
+
+### Mac
+
+**Задачи и фокус дня** — боковое меню, категории и быстрый ввод с клавиатуры.
+
+[![MonoTask на Mac — задачи и фокус дня](docs/screenshots/mac-today.jpg)](docs/screenshots/mac-today.jpg)
+
+**Аналитика** — календарь активности и статистика по категориям.
+
+[![MonoTask на Mac — аналитика](docs/screenshots/mac-activity.jpg)](docs/screenshots/mac-activity.jpg)
+
+Снимки Mac-версии также используют демонстрационные данные.
 
 ## Возможности
 

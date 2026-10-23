@@ -21,6 +21,16 @@ struct MacRootView: View {
     @State private var dropTargetTagId: UUID? = nil
     @State private var today: Date = Date.now.startOfDay
 
+    init(initialTab: AppTab = .today) {
+        let initial: SidebarSelection =
+            switch initialTab {
+            case .today: .list(.focus)
+            case .activity: .activity
+            case .settings: .settings
+            }
+        _selection = State(initialValue: initial)
+    }
+
     private var scheduledTags: [Tag] {
         _ = today
         return FocusService.shared.currentFocusTags(allTags: tags, override: nil)

@@ -1,7 +1,7 @@
 import SwiftUI
 import SwiftData
 
-#if DEBUG && targetEnvironment(simulator)
+#if DEBUG && (targetEnvironment(simulator) || os(macOS))
 /// Disposable local fixtures for exercising real touch gestures without a cloud account.
 struct ScrollGestureTestRoot: View {
     @State private var container: ModelContainer

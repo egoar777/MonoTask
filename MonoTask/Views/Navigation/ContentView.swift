@@ -19,7 +19,7 @@ struct ContentView: View {
 
     var body: some View {
         #if os(macOS)
-        MacRootView()
+        MacRootView(initialTab: selectedTab)
             .overlay(alignment: .bottom) {
                 UndoDeletionToast().padding(.bottom, 20)
             }
