@@ -22,25 +22,9 @@
 
 ## Экраны
 
-<table>
-  <tr>
-    <th width="33%">Фокус дня</th>
-    <th width="33%">Аналитика</th>
-    <th width="33%">Настройки</th>
-  </tr>
-  <tr>
-    <td><img src="docs/screenshots/iphone-today.png" alt="Список задач MonoTask с приоритетами и категориями" width="280" /></td>
-    <td><img src="docs/screenshots/iphone-activity.png" alt="Календарь активности и статистика по категориям" width="280" /></td>
-    <td><img src="docs/screenshots/iphone-settings.png" alt="Расписание фокуса, категории и настройки уведомлений" width="280" /></td>
-  </tr>
-  <tr>
-    <td>Главные задачи, быстрый ввод и фильтры по категориям.</td>
-    <td>Выполненные задачи, серии дней и календарь активности.</td>
-    <td>Своё расписание, цвета категорий и уведомления.</td>
-  </tr>
-</table>
+[![Фокус дня, аналитика и настройки MonoTask](docs/screenshots/overview.jpg)](docs/screenshots/overview.jpg)
 
-<sub>Скриншоты из симулятора iPhone. Задачи и статистика демонстрационные.</sub>
+Скриншоты из симулятора iPhone с демонстрационными данными. Нажмите на изображение, чтобы открыть в полном размере.
 
 ## Возможности
 
