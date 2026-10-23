@@ -9,6 +9,10 @@ struct ContentView: View {
     @State private var selectedTab: AppTab = .today
     @State private var isCaptureActive: Bool = false
 
+    init(initialTab: AppTab = .today) {
+        _selectedTab = State(initialValue: initialTab)
+    }
+
     private var openTaskCount: Int {
         allTasks.filter { !$0.isDone && !TaskDeletionManager.shared.isPending($0) }.count
     }

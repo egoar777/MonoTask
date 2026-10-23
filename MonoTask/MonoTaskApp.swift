@@ -58,7 +58,9 @@ struct MonoTaskApp: App {
 
     @ViewBuilder private var rootView: some View {
         #if DEBUG && targetEnvironment(simulator)
-        if ProcessInfo.processInfo.arguments.contains("--scroll-gesture-test") {
+        if ProcessInfo.processInfo.arguments.contains("--screenshots") {
+            ScreenshotPreviewRoot()
+        } else if ProcessInfo.processInfo.arguments.contains("--scroll-gesture-test") {
             ScrollGestureTestRoot()
         } else {
             AuthenticatedRootView()
