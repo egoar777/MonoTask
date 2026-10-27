@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/screenshots/app-icon.png" width="96" alt="Иконка MonoTask" />
+<img src="MonoTask/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png" width="96" alt="Иконка MonoTask" />
 
 # MonoTask
 
