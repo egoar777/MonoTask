@@ -34,7 +34,7 @@
 
 ### Mac
 
-**Задачи и фокус дня** — боковое меню, категории и быстрый ввод с клавиатуры.
+**Задачи и фокус дня, версия 2.0** — боковое меню, категории и быстрый ввод с клавиатуры.
 
 [![MonoTask на Mac — задачи и фокус дня](docs/screenshots/mac-today.jpg)](docs/screenshots/mac-today.jpg)
 
@@ -42,7 +42,11 @@
 
 [![MonoTask на Mac — аналитика](docs/screenshots/mac-activity.jpg)](docs/screenshots/mac-activity.jpg)
 
-Снимки Mac-версии также используют демонстрационные данные.
+**Настройки** — аккаунт, расписание, уведомления и вид списка.
+
+[![MonoTask 2.0 на Mac — настройки](docs/screenshots/mac-settings.jpg)](docs/screenshots/mac-settings.jpg)
+
+Все снимки Mac-версии сделаны в версии 2.0 с демонстрационными данными.
 
 ## Версия 2.0
 
