@@ -42,6 +42,7 @@ struct ScrollGestureTestRoot: View {
 struct ScreenshotPreviewRoot: View {
     @State private var container: ModelContainer
     private let initialTab: AppTab
+    @State private var showingSyncDetails = false
 
     init() {
         let schema = Schema([
@@ -71,8 +72,16 @@ struct ScreenshotPreviewRoot: View {
             let task = TaskItem(
                 title: item.0, notes: item.1, bucket: .todo, isHighPriorityToday: item.3, tags: [item.2])
             task.sortOrder = index
+            if index == 0 {
+                task.dueDate = Calendar.current.date(bySettingHour: 19, minute: 0, second: 0, of: Date.now)
+            }
             opened.mainContext.insert(task)
         }
+        let completed = TaskItem(title: "Составить план дня", tags: [study])
+        completed.bucket = .done
+        completed.completedAt = Date.now
+        completed.sortOrder = 10
+        opened.mainContext.insert(completed)
         for day in 0..<210 where day % 7 != 3 && day % 11 != 0 {
             let date = Calendar.current.date(byAdding: .day, value: -day, to: Date.now.startOfDay)!
             for index in 0..<(1 + (day * 7 + day / 3) % 5) {
@@ -90,7 +99,31 @@ struct ScreenshotPreviewRoot: View {
     var body: some View {
         ContentView(initialTab: initialTab)
             .modelContainer(container)
-            .onAppear { AuthManager.shared.activeContainer = container }
+            .onAppear {
+                AuthManager.shared.activeContainer = container
+                showingSyncDetails = ProcessInfo.processInfo.arguments.contains("--sync-details")
+            }
+            .task {
+                if ProcessInfo.processInfo.arguments.contains("--cancel-sync-request") {
+                    let request = Task { @MainActor in
+                        try await SupabaseSyncService.shared.sync(context: container.mainContext)
+                    }
+                    try? await Task.sleep(for: .milliseconds(50))
+                    request.cancel()
+                    try? await request.value
+                }
+            }
+            .sheet(isPresented: $showingSyncDetails) {
+                ScrollView {
+                    SyncDetailsView(showsCloseButton: true).padding(24)
+                }
+                .scrollBounceBehavior(.basedOnSize)
+                #if os(iOS)
+                .presentationDetents([.height(280), .large])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(Theme.Colors.surfaceElevated)
+                #endif
+            }
             .onDisappear {
                 TaskDeletionManager.shared.reset()
                 AuthManager.shared.activeContainer = nil

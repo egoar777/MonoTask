@@ -53,6 +53,8 @@ final class SupabaseService {
     private(set) var client: SupabaseClient?
     var connectionStatus: ConnectionStatus = .notConfigured
     var syncStatus: SyncStatus = .idle
+    var hasPendingChanges = false
+    var localChangeRevision = 0
 
     private init() {
         configureClient()

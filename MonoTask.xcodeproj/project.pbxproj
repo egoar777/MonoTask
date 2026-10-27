@@ -391,7 +391,7 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
-				LastUpgradeCheck = 1600;
+				LastUpgradeCheck = 2600;
 				TargetAttributes = {
 					8600E43FBD3F58CEAB1A0D58 = {
 						ProvisioningStyle = Automatic;
@@ -512,7 +512,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 18;
+				CURRENT_PROJECT_VERSION = 19;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_FILE = MonoTask/Resources/Info.plist;
@@ -521,7 +521,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.2.12;
+				MARKETING_VERSION = 2.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.monotask;
 				"PRODUCT_BUNDLE_IDENTIFIER[sdk=iphoneos*]" = com.monotask.ios;
 				"PRODUCT_BUNDLE_IDENTIFIER[sdk=macosx*]" = com.monotask.macos;
@@ -669,7 +669,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 18;
+				CURRENT_PROJECT_VERSION = 19;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_FILE = MonoTask/Resources/Info.plist;
@@ -678,7 +678,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.2.12;
+				MARKETING_VERSION = 2.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.monotask;
 				"PRODUCT_BUNDLE_IDENTIFIER[sdk=iphoneos*]" = com.monotask.ios;
 				"PRODUCT_BUNDLE_IDENTIFIER[sdk=macosx*]" = com.monotask.macos;

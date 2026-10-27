@@ -7,8 +7,10 @@ struct TodayView: View {
         var allTasks: [TaskItem]
     @Query(sort: [SortDescriptor(\Tag.sortOrder), SortDescriptor(\Tag.createdAt)]) private var tags: [Tag]
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ObservedObject private var keyboard = KeyboardObserver.shared
+    @Binding var captureTag: Tag?
     @Binding var isCaptureActive: Bool
-    let bottomNavigation: AnyView
 
     @State private var scope: TaskScope = .focus
     @State private var taskToEdit: TaskItem?
@@ -18,9 +20,11 @@ struct TodayView: View {
     /// Re-renders the screen when the day rolls over, so "Фокус дня" follows the weekday
     @State private var today: Date = Date.now.startOfDay
 
-    init(isCaptureActive: Binding<Bool> = .constant(false), bottomNavigation: AnyView = AnyView(EmptyView())) {
+    init(
+        isCaptureActive: Binding<Bool> = .constant(false), captureTag: Binding<Tag?> = .constant(nil)
+    ) {
         self._isCaptureActive = isCaptureActive
-        self.bottomNavigation = bottomNavigation
+        self._captureTag = captureTag
     }
 
     private var scheduledTags: [Tag] {
@@ -57,7 +61,8 @@ struct TodayView: View {
         KeyboardAnchoredLayout {
             VStack(spacing: 0) {
                 FocusHeroCard(
-                    compact: isCaptureActive,
+                    compact: keyboard.isKeyboardVisible,
+                    collapseAnimation: keyboard.transitionAnimation,
                     tags: tags,
                     scheduledTags: scheduledTags,
                     scope: $scope,
@@ -69,15 +74,15 @@ struct TodayView: View {
                             .filter { !$0.isDone && !TaskDeletionManager.shared.isPending($0) }.count
                     }
                 )
-                .animation(.easeInOut(duration: 0.2), value: isCaptureActive)
                 .zIndex(10)
 
                 ScrollViewReader { scrollProxy in
                     ScrollView {
-                        VStack(alignment: .leading, spacing: 28) {
+                        VStack(alignment: .leading, spacing: 16) {
                             Color.clear
                                 .frame(height: 1)
                                 .id("top_anchor")
+                                .padding(.bottom, 12)
 
                             if !highPriorityTasks.isEmpty {
                                 taskSection(
@@ -101,11 +106,15 @@ struct TodayView: View {
 
                             if !completedTasks.isEmpty {
                                 completedSection
+                                    .padding(.top, 12)
                             }
 
                         }
                         .padding(.horizontal, Theme.Spacing.screenPadding)
                         .padding(.bottom, 4)
+                        .animation(reduceMotion ? nil : Theme.Motion.standard, value: filteredTasks.map(\.id))
+                        .animation(reduceMotion ? nil : Theme.Motion.standard, value: highPriorityTasks.map(\.id))
+                        .animation(reduceMotion ? nil : Theme.Motion.standard, value: completedTasks.map(\.id))
                     }
                     .refreshable {
                         do {
@@ -118,24 +127,31 @@ struct TodayView: View {
                     }
                     .scrollBounceBehavior(.always, axes: .vertical)
                     .scrollDismissesKeyboard(.interactively)
+                    #if os(iOS)
+                    .contentMargins(.bottom, isCaptureActive ? 0 : 88, for: .scrollContent)
+                    #endif
                     .monoScrollEdge()
                     .onChange(of: scope) { _, _ in
-                        scrollProxy.scrollTo("top_anchor", anchor: .top)
+                        withAnimation(reduceMotion ? nil : Theme.Motion.standard) {
+                            scrollProxy.scrollTo("top_anchor", anchor: .top)
+                        }
                     }
                 }
             }
             .modelContainer(modelContext.container)
         } dock: {
             VStack(spacing: 0) {
+                #if os(iOS)
+                EmptyView()
+                #else
                 UndoDeletionToast()
                 FastCaptureBar(
                     activeTag: activeTag,
                     isCaptureActive: $isCaptureActive
                 )
+                #endif
             }
             .modelContainer(modelContext.container)
-        } footer: {
-            bottomNavigation
         }
         .ignoresSafeArea(.keyboard)
         .background(Theme.Colors.background.ignoresSafeArea())
@@ -145,6 +161,7 @@ struct TodayView: View {
         .clearCompletedAlert(isPresented: $showingClearCompleted, tasks: completedTasks)
         .onAppear {
             hideKeyboard()
+            captureTag = activeTag
             if NotificationService.shared.morningNavigationToken != nil { applyMorningScope() }
         }
         .onChange(of: NotificationService.shared.morningNavigationToken) { _, _ in applyMorningScope() }
@@ -152,6 +169,7 @@ struct TodayView: View {
             isCaptureActive = false
             hideKeyboard()
         }
+        .onChange(of: activeTag?.id) { _, _ in captureTag = activeTag }
         .onChange(of: taskToEdit) { _, _ in
             isCaptureActive = false
             hideKeyboard()
@@ -191,6 +209,7 @@ struct TodayView: View {
                     isTargeted: targetedTaskId == task.id,
                     onEdit: { taskToEdit = $0 }
                 )
+                .transition(reduceMotion ? .opacity : .opacity.combined(with: .offset(y: 6)))
                 .dropDestination(for: String.self) { items, _ in
                     targetedTaskId = nil
                     guard let rawId = items.first,
@@ -198,7 +217,7 @@ struct TodayView: View {
                         sourceId != task.id
                     else { return false }
                     Haptics.selection()
-                    withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                    withAnimation(reduceMotion ? nil : Theme.Motion.standard) {
                         modelContext.reorderTask(
                             sourceId, onto: task.id,
                             in: allTasks.filter { !TaskDeletionManager.shared.isPending($0) },
@@ -221,7 +240,7 @@ struct TodayView: View {
             HStack(alignment: .firstTextBaseline) {
                 Button {
                     Haptics.selection()
-                    withAnimation(.easeInOut(duration: 0.2)) {
+                    withAnimation(reduceMotion ? nil : Theme.Motion.standard) {
                         showCompleted.toggle()
                     }
                 } label: {

@@ -1,7 +1,9 @@
 import SwiftUI
+import SwiftData
 struct FocusHeroCard: View {
-    @State private var summaryHeight: CGFloat = 80
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var compact: Bool = false
+    var collapseAnimation: Animation = Theme.Motion.standard
     let tags: [Tag]
     let scheduledTags: [Tag]
     @Binding var scope: TaskScope
@@ -36,6 +38,7 @@ struct FocusHeroCard: View {
             .fixedSize(horizontal: false, vertical: true)
 
             Text(title.uppercased())
+                .contentTransition(.opacity)
                 .font(Theme.Typography.display)
                 .tracking(Theme.Typography.displayTracking)
                 .foregroundColor(Theme.Colors.textPrimary)
@@ -46,40 +49,37 @@ struct FocusHeroCard: View {
                 .frame(height: compact ? 29 : 43, alignment: .leading)
                 .padding(.top, compact ? 10 : 18)
 
-            VStack(alignment: .leading, spacing: 0) {
+            CollapsingSection(progress: compact ? 1 : 0) {
+                VStack(alignment: .leading, spacing: 0) {
 
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text("\(doneCount)")
-                        .font(Theme.Typography.figure(46))
-                        .foregroundColor(Theme.Colors.accent)
-                        .contentTransition(.numericText())
-                    Text("/ \(totalCount) ГОТОВО")
-                        .font(Theme.Typography.numeric(13))
-                        .foregroundColor(Theme.Colors.textMuted)
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text("\(doneCount)")
+                            .font(Theme.Typography.figure(46))
+                            .foregroundColor(Theme.Colors.accent)
+                            .contentTransition(.numericText())
+                            .accessibilityIdentifier("focus-completion-count")
+                        Text("/ \(totalCount) ГОТОВО")
+                            .font(Theme.Typography.numeric(13))
+                            .foregroundColor(Theme.Colors.textMuted)
 
-                    if let subtitle {
-                        Spacer(minLength: 8)
-                        Text(subtitle.uppercased())
-                            .font(Theme.Typography.eyebrow)
-                            .tracking(Theme.Typography.eyebrowTracking)
-                            .foregroundColor(Theme.Colors.textSecondary)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
+                        if let subtitle {
+                            Spacer(minLength: 8)
+                            Text(subtitle.uppercased())
+                                .font(Theme.Typography.eyebrow)
+                                .tracking(Theme.Typography.eyebrowTracking)
+                                .foregroundColor(Theme.Colors.textSecondary)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                        }
                     }
-                }
-                .padding(.top, 4)
+                    .padding(.top, 4)
 
-                ProgressLine(progress: progress)
-                    .padding(.top, 14)
-            }
-            .fixedSize(horizontal: false, vertical: true)
-            .onGeometryChange(for: CGFloat.self) {
-                $0.size.height
-            } action: {
-                summaryHeight = $0
+                    ProgressLine(progress: progress)
+                        .padding(.top, 14)
+                }
+                .fixedSize(horizontal: false, vertical: true)
             }
             .opacity(compact ? 0 : 1)
-            .frame(height: compact ? 0 : summaryHeight, alignment: .top)
             .clipped()
             .accessibilityHidden(compact)
 
@@ -97,7 +97,7 @@ struct FocusHeroCard: View {
                 }
                 .padding(.horizontal, -Theme.Spacing.screenPadding)
                 .onChange(of: scope) { _, newScope in
-                    withAnimation(KeyboardObserver.shared.isKeyboardVisible ? nil : .easeInOut(duration: 0.25)) {
+                    withAnimation(reduceMotion ? nil : Theme.Motion.standard) {
                         proxy.scrollTo(pillId(newScope), anchor: .center)
                     }
                 }
@@ -105,6 +105,8 @@ struct FocusHeroCard: View {
         }
         .padding(.horizontal, Theme.Spacing.screenPadding)
         .background(Theme.Colors.background)
+        .animation(reduceMotion ? nil : Theme.Motion.standard, value: doneCount)
+        .animation(reduceMotion ? nil : collapseAnimation, value: compact)
     }
 
     private func pill(_ pillScope: TaskScope, title: String, color: Color?) -> some View {
@@ -116,9 +118,10 @@ struct FocusHeroCard: View {
         ) {
             guard scope != pillScope else { return }
             Haptics.selection()
-            scope = pillScope
+            withAnimation(reduceMotion ? nil : Theme.Motion.standard) { scope = pillScope }
         }
         .id(pillId(pillScope))
+        .accessibilityIdentifier("task-scope-" + pillId(pillScope))
     }
 
     private func pillId(_ scope: TaskScope) -> String {
@@ -130,43 +133,174 @@ struct FocusHeroCard: View {
         }
     }
 }
+/// Measures the expanded summary directly rather than feeding geometry changes
+/// back into state during keyboard animation. Layout and clipping share one value.
+private struct CollapsingSection: Layout {
+    var progress: CGFloat
+    var animatableData: CGFloat {
+        get { progress }
+        set { progress = newValue }
+    }
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let size = subviews.first?.sizeThatFits(ProposedViewSize(width: proposal.width, height: nil)) ?? .zero
+        return CGSize(width: size.width, height: size.height * (1 - min(1, max(0, progress))))
+    }
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        subviews.first?.place(
+            at: bounds.origin, anchor: .topLeading, proposal: ProposedViewSize(width: proposal.width, height: nil))
+    }
+}
+
 struct SyncIndicator: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var showingDetails = false
     var body: some View {
-        let service = SupabaseService.shared
-        HStack(spacing: 6) {
-            if service.syncStatus.isSyncing {
-                ProgressView()
-                    .controlSize(.mini)
-            } else {
-                Circle()
-                    .fill(dotColor(service))
-                    .frame(width: 6, height: 6)
+        Button {
+            showingDetails = true
+        } label: {
+            HStack(spacing: 6) {
+                ZStack {
+                    if SupabaseService.shared.syncStatus.isSyncing {
+                        ProgressView().controlSize(.mini)
+                    } else {
+                        Circle().fill(SyncPresentation.color).frame(width: 6, height: 6)
+                    }
+                }
+                .frame(width: 12, height: 12)
+                Text(SyncPresentation.title.uppercased())
+                    .contentTransition(.opacity)
+                    .font(Theme.Typography.eyebrow)
+                    .tracking(Theme.Typography.eyebrowTracking)
+                    .foregroundStyle(Theme.Colors.textMuted)
+                    .lineLimit(1)
             }
-            Text(label(service))
-                .font(Theme.Typography.eyebrow)
-                .tracking(Theme.Typography.eyebrowTracking)
-                .foregroundColor(Theme.Colors.textMuted)
         }
+        .buttonStyle(.plain)
+        .animation(reduceMotion ? nil : Theme.Motion.quick, value: SyncPresentation.title)
+        .accessibilityIdentifier("sync-status")
+        .accessibilityHint("Показать подробности синхронизации")
+        #if os(iOS)
+        .sheet(isPresented: $showingDetails) {
+            ScrollView {
+                SyncDetailsView(showsCloseButton: true).padding(24)
+            }
+            .scrollBounceBehavior(.basedOnSize)
+            .presentationDetents([.height(280), .large])
+            .presentationDragIndicator(.visible)
+            .presentationBackground(Theme.Colors.surfaceElevated)
+        }
+        #else
+        .popover(isPresented: $showingDetails) {
+            ScrollView {
+                SyncDetailsView(showsCloseButton: true).padding(24)
+            }
+            .frame(width: 380, height: 320)
+        }
+        #endif
     }
+}
 
-    private func dotColor(_ service: SupabaseService) -> Color {
-        if case .error = service.syncStatus { return Theme.Colors.danger }
-        switch service.connectionStatus {
-        case .offline: return Theme.Colors.warning
-        case .error: return Theme.Colors.danger
-        case .notConfigured: return Theme.Colors.textMuted
-        default: return Theme.Colors.accent
-        }
+@MainActor
+enum SyncPresentation {
+    static var isPreview: Bool {
+        #if DEBUG && (targetEnvironment(simulator) || os(macOS))
+        return ProcessInfo.processInfo.arguments.contains("--screenshots")
+            && ProcessInfo.processInfo.arguments.contains("--sync-success")
+        #else
+        return false
+        #endif
     }
+    static var title: String {
+        if isPreview { return "Синхронизировано" }
+        let service = SupabaseService.shared
+        if AuthManager.shared.userID == nil && !SupabaseSyncService.usesPreviewTransport { return "Локально" }
+        if !NetworkMonitor.shared.isConnected { return "Без сети" }
+        if service.syncStatus.isSyncing { return "Синхронизация…" }
+        if case .error = service.syncStatus { return "Ошибка синхронизации" }
+        if case .error = service.connectionStatus { return "Нет соединения" }
+        if service.hasPendingChanges { return "Есть изменения" }
+        if case .success = service.syncStatus { return "Синхронизировано" }
+        return "Ожидает синхронизации"
+    }
+    static var icon: String {
+        if SupabaseService.shared.syncStatus.isSyncing { return "arrow.triangle.2.circlepath" }
+        return title == "Синхронизировано" ? "checkmark.icloud" : "icloud"
+    }
+    static var color: Color {
+        if case .error = SupabaseService.shared.syncStatus { return Theme.Colors.danger }
+        if !NetworkMonitor.shared.isConnected { return Theme.Colors.warning }
+        return title == "Синхронизировано" ? Theme.Colors.accent : Theme.Colors.textSecondary
+    }
+}
 
-    private func label(_ service: SupabaseService) -> String {
-        if service.syncStatus.isSyncing { return "SYNC" }
-        if case .error = service.syncStatus { return "ОШИБКА" }
-        switch service.connectionStatus {
-        case .offline: return "ОФЛАЙН"
-        case .error: return "ОШИБКА"
-        case .notConfigured: return "ЛОКАЛЬНО"
-        default: return "ОНЛАЙН"
+struct SyncDetailsView: View {
+    var showsCloseButton = false
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var context
+    @State private var retryError: String?
+    private var canSync: Bool {
+        !SyncPresentation.isPreview && AuthManager.shared.userID != nil && NetworkMonitor.shared.isConnected
+            && !SupabaseService.shared.syncStatus.isSyncing
+    }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            HStack(alignment: .top) {
+                Label(SyncPresentation.title, systemImage: SyncPresentation.icon)
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundStyle(SyncPresentation.color)
+                Spacer(minLength: 4)
+                if showsCloseButton {
+                    Button {
+                        dismiss()
+                    } label: {
+                        Image(systemName: "xmark").font(.system(size: 14, weight: .semibold))
+                            .frame(width: 36, height: 36).background(Theme.Colors.fillStrong, in: Circle())
+                    }.buttonStyle(.plain).accessibilityLabel("Закрыть")
+                }
+            }
+            Text(
+                SyncPresentation.isPreview
+                    ? "Пример успешной синхронизации. Демонстрационные данные."
+                    : AuthManager.shared.userID == nil
+                        ? "Данные находятся на этом устройстве. Войдите в аккаунт, чтобы синхронизировать их между устройствами."
+                        : "Задачи сохранены на устройстве. При подключении к сети изменения обновляются в облаке."
+            )
+            .font(.system(size: 16))
+            .foregroundStyle(Theme.Colors.textSecondary)
+            .fixedSize(horizontal: false, vertical: true)
+            if let date = SyncPresentation.isPreview ? Date.now : SupabaseConfig.shared.lastSyncDate,
+                SyncPresentation.isPreview || AuthManager.shared.userID != nil
+            {
+                HStack(alignment: .firstTextBaseline) {
+                    Text("Обновлено").foregroundStyle(Theme.Colors.textSecondary)
+                    Spacer()
+                    Text(
+                        date.formatted(
+                            .dateTime.day().month(.abbreviated).hour().minute().locale(Locale(identifier: "ru_RU"))))
+                }
+                .font(.system(size: 15))
+            }
+            if case .error(let message) = SupabaseService.shared.syncStatus {
+                Text(message).font(.system(size: 15)).foregroundStyle(Theme.Colors.danger)
+            }
+            if let retryError { Text(retryError).font(.system(size: 15)).foregroundStyle(Theme.Colors.danger) }
+            Button {
+                Task { @MainActor in
+                    do { try await SupabaseSyncService.shared.sync(context: context); retryError = nil } catch {
+                        retryError = error.localizedDescription
+                    }
+                }
+            } label: {
+                Label("Синхронизировать сейчас", systemImage: "arrow.triangle.2.circlepath")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(canSync ? Theme.Colors.onAccent : Theme.Colors.textSecondary)
+                    .frame(maxWidth: .infinity, minHeight: 52)
+                    .background(canSync ? Theme.Colors.accent : Theme.Colors.surfaceInteractive, in: Capsule())
+            }
+            .buttonStyle(.plain)
+            .disabled(!canSync)
         }
+        .foregroundStyle(Theme.Colors.textPrimary)
+        .preferredColorScheme(.dark)
     }
 }

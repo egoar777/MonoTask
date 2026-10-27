@@ -24,16 +24,16 @@ struct UndoDeletionToast: View {
 
                     Button {
                         Haptics.selection()
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                        withAnimation(reduceMotion ? nil : Theme.Motion.standard) {
                             deletion.undo()
                         }
                     } label: {
-                        Text("ОТМЕНИТЬ")
-                            .font(Theme.Typography.numeric(11, weight: .bold))
-                            .foregroundColor(Theme.Colors.onAccent)
+                        Text("Отменить")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(Theme.Colors.accent)
                             .padding(.horizontal, 12)
-                            .frame(height: 36)
-                            .background(Theme.Colors.accent)
+                            .frame(minHeight: 44)
+                            .background(Theme.Colors.accent.opacity(0.12))
                             .clipShape(Capsule())
                     }
                     .buttonStyle(.plain)
@@ -41,18 +41,13 @@ struct UndoDeletionToast: View {
                 }
                 .padding(.leading, 16)
                 .padding(.trailing, 8)
-                .frame(maxWidth: 440, minHeight: 54)
-                .background(Theme.Colors.surfaceElevated)
-                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
-                        .strokeBorder(Theme.Colors.ruleStrong, lineWidth: 1)
-                )
-                .shadow(color: .black.opacity(0.45), radius: 14, y: 6)
+                .frame(maxWidth: 440, minHeight: 60)
+                .modifier(FloatingGlass(shape: Capsule()))
+                .accessibilityIdentifier("undo-deletion-toast")
                 .padding(.horizontal, 16)
-                .transition(reduceMotion ? .opacity : .offset(y: 8).combined(with: .opacity))
+                .transition(reduceMotion ? .opacity : .scale(scale: 0.96, anchor: .bottom).combined(with: .opacity))
             }
         }
-        .animation(.easeInOut(duration: 0.22), value: deletion.pendingCount > 0)
+        .animation(reduceMotion ? nil : Theme.Motion.standard, value: deletion.pendingCount > 0)
     }
 }

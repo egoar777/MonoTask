@@ -2,6 +2,7 @@ import SwiftUI
 import SwiftData
 
 struct TagEditSheet: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @Query(sort: [SortDescriptor(\Tag.sortOrder), SortDescriptor(\Tag.createdAt)]) private var tags: [Tag]
@@ -11,6 +12,7 @@ struct TagEditSheet: View {
     @State private var name: String = ""
     @State private var selectedColorHex: String = Theme.Colors.tagColors[0]
     @State private var selectedWeekdays: Set<Weekday> = []
+    @State private var confirmingDelete = false
 
     private var isEditing: Bool {
         tagToEdit != nil
@@ -78,7 +80,7 @@ struct TagEditSheet: View {
                                 let isSelected = selectedColorHex == hex
                                 Button {
                                     Haptics.selection()
-                                    selectedColorHex = hex
+                                    withAnimation(reduceMotion ? nil : Theme.Motion.quick) { selectedColorHex = hex }
                                 } label: {
                                     Circle()
                                         .fill(Theme.Colors.tagColor(hex))
@@ -98,18 +100,18 @@ struct TagEditSheet: View {
 
                     VStack(alignment: .leading, spacing: 10) {
                         EyebrowLabel(text: "Дни фокуса")
-                        HStack(spacing: 6) {
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 64), spacing: 8)], spacing: 8) {
                             ForEach(Weekday.orderedFromMonday) { day in
                                 let isActive = selectedWeekdays.contains(day)
                                 Button {
                                     Haptics.selection()
-                                    toggleWeekday(day)
+                                    withAnimation(reduceMotion ? nil : Theme.Motion.quick) { toggleWeekday(day) }
                                 } label: {
                                     Text(day.shortName.uppercased())
                                         .font(Theme.Typography.numeric(12, weight: isActive ? .bold : .regular))
                                         .foregroundColor(isActive ? Theme.Colors.onAccent : Theme.Colors.textSecondary)
                                         .frame(maxWidth: .infinity)
-                                        .frame(height: 40)
+                                        .frame(height: 48)
                                         .background(
                                             isActive ? Theme.Colors.tagColor(selectedColorHex) : Theme.Colors.surface
                                         )
@@ -128,6 +130,10 @@ struct TagEditSheet: View {
                             .font(Theme.Typography.caption)
                             .foregroundColor(Theme.Colors.textMuted)
                     }
+                    if tagToEdit != nil {
+                        Button("Удалить категорию", role: .destructive) { confirmingDelete = true }
+                            .frame(minHeight: 44)
+                    }
                 }
                 .padding(.horizontal, Theme.Spacing.screenPadding)
                 .padding(.top, 8)
@@ -139,7 +145,7 @@ struct TagEditSheet: View {
         .background(Theme.Colors.background.ignoresSafeArea())
         .tint(Theme.Colors.accent)
         #if os(iOS)
-        .presentationDetents([.medium, .large])
+        .presentationDetents([.large])
         .presentationDragIndicator(.visible)
         .presentationBackground(Theme.Colors.background)
         .presentationCornerRadius(Theme.Radius.sheet)
@@ -147,6 +153,13 @@ struct TagEditSheet: View {
         .frame(minWidth: 440, idealWidth: 480, minHeight: 380, idealHeight: 420)
         #endif
         .preferredColorScheme(Theme.colorScheme)
+        .confirmationDialog("Удалить категорию?", isPresented: $confirmingDelete, titleVisibility: .visible) {
+            Button("Удалить", role: .destructive) {
+                if let tag = tagToEdit { modelContext.deleteWithSync(tag); modelContext.saveAndSync(); dismiss() }
+            }
+        } message: {
+            Text("Задачи останутся без этой категории.")
+        }
         .onReceive(NotificationCenter.default.publisher(for: .dismissTaskEditor)) { _ in dismiss() }
         .onAppear {
             if let tag = tagToEdit {

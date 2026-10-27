@@ -11,6 +11,10 @@ struct TaskRowView: View {
     var isTargeted: Bool = false
     let onEdit: (TaskItem) -> Void
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @AppStorage("monotask_show_task_notes") private var showNotes = true
+    @AppStorage("monotask_compact_rows") private var compactRows = false
+    @State private var completing = false
     @State private var checkboxScale: CGFloat = 1.0
     @State private var lastToggleTime: Date = .distantPast
     @State private var settledSwipeOffset: CGFloat = 0
@@ -56,6 +60,17 @@ struct TaskRowView: View {
         }
         .frame(minHeight: 56)
         .clipped()
+        .task {
+            #if DEBUG && targetEnvironment(simulator)
+            if ProcessInfo.processInfo.arguments.contains("--screenshots"),
+                ProcessInfo.processInfo.arguments.contains("--animate-completion"), task.sortOrder == 0
+            {
+                try? await Task.sleep(for: .seconds(2))
+                guard !Task.isCancelled else { return }
+                toggleDone()
+            }
+            #endif
+        }
         #if os(iOS)
         .gesture(swipeGesture)
         #endif
@@ -113,7 +128,7 @@ struct TaskRowView: View {
             Button {
                 toggleDone()
             } label: {
-                TaskCheckbox(isDone: isDone, isPriority: task.isHighPriorityToday)
+                TaskCheckbox(isDone: isDone || completing, isPriority: task.isHighPriorityToday)
                     .scaleEffect(checkboxScale)
                     .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
@@ -126,7 +141,7 @@ struct TaskRowView: View {
                 Text(task.title)
                     .font(Theme.Typography.body)
                     .tracking(Theme.Typography.bodyTracking)
-                    .strikethrough(isDone, color: Theme.Colors.textMuted)
+                    .strikethrough(isDone || completing, color: Theme.Colors.textMuted)
                     .foregroundColor(isDone ? Theme.Colors.textMuted : Theme.Colors.textPrimary)
                     .lineLimit(2)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -135,7 +150,7 @@ struct TaskRowView: View {
                     metaRow
                 }
             }
-            .padding(.vertical, 12)
+            .padding(.vertical, compactRows ? 8 : 12)
             .contentShape(Rectangle())
             .onTapGesture {
                 onEdit(task)
@@ -176,7 +191,7 @@ struct TaskRowView: View {
     }
 
     private func deleteTask() {
-        guard !isDeleting else { return }
+        guard !isDeleting, !completing else { return }
         isDeleting = true
         Haptics.warning()
         withAnimation(.easeInOut(duration: 0.2)) {
@@ -214,7 +229,7 @@ struct TaskRowView: View {
                 .foregroundColor(allSubtasksDone && !isDone ? Theme.Colors.success : Theme.Colors.textMuted)
             }
 
-            if !task.notes.isEmpty {
+            if showNotes && !task.notes.isEmpty {
                 Text(task.notes)
                     .font(Theme.Typography.caption)
                     .foregroundColor(Theme.Colors.textMuted)
@@ -224,28 +239,30 @@ struct TaskRowView: View {
     }
 
     private func toggleDone() {
+        guard !completing, !isDeleting else { return }
         let now = Date.now
-        let willBeDone = !task.isDone
-
-        // Guard against a double tap immediately undoing a completion
-        if !willBeDone && now.timeIntervalSince(lastToggleTime) < 0.65 { return }
-        if now.timeIntervalSince(lastToggleTime) < 0.35 { return }
+        guard now.timeIntervalSince(lastToggleTime) >= 0.4 else { return }
         lastToggleTime = now
-
-        let keyboardVisible = KeyboardObserver.shared.isKeyboardVisible
-        if !keyboardVisible {
-            withAnimation(.easeOut(duration: 0.08)) {
-                checkboxScale = 0.8
+        let next = !task.isDone
+        next ? Haptics.success() : Haptics.selection()
+        if reduceMotion || KeyboardObserver.shared.isKeyboardVisible || !next {
+            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.25)) {
+                modelContext.setCompleted(task, next)
             }
-            withAnimation(.spring(response: 0.28, dampingFraction: 0.45).delay(0.08)) {
-                checkboxScale = 1.0
-            }
+            return
         }
-
-        willBeDone ? Haptics.success() : Haptics.selection()
-
-        withAnimation(keyboardVisible ? nil : .easeInOut(duration: 0.25)) {
-            modelContext.setCompleted(task, willBeDone)
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) {
+            completing = true
+            checkboxScale = 1.14
+        }
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(180))
+            guard task.modelContext != nil else { return }
+            withAnimation(.easeInOut(duration: 0.3)) {
+                checkboxScale = 1
+                modelContext.setCompleted(task, true)
+                completing = false
+            }
         }
     }
 

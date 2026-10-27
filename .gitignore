@@ -25,3 +25,7 @@ Packages/
 # Generated output
 *.log
 tests/evidence/
+
+# Local design iterations and test bundles
+/docs/design-review/
+*.xcresult/

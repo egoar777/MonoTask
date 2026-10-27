@@ -1,0 +1,24 @@
+name: MonoTaskUIReview
+options:
+  bundleIdPrefix: com.monotask.review
+settings:
+  base:
+    SWIFT_VERSION: '6.0'
+    CODE_SIGNING_ALLOWED: NO
+targets:
+  ReviewUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    deploymentTarget: '18.0'
+    sources: [ReviewTests.swift]
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.monotask.review.ui
+schemes:
+  Review:
+    build:
+      targets:
+        ReviewUITests: all
+    test:
+      targets: [ReviewUITests]

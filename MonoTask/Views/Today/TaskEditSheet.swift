@@ -2,6 +2,7 @@ import SwiftUI
 import SwiftData
 
 struct TaskEditSheet: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @Query(sort: [SortDescriptor(\Tag.sortOrder), SortDescriptor(\Tag.createdAt)]) private var availableTags: [Tag]
@@ -113,12 +114,14 @@ struct TaskEditSheet: View {
     private var titleAndNotes: some View {
         VStack(alignment: .leading, spacing: 10) {
             TextField("Что нужно сделать?", text: $title, axis: .vertical)
+                .accessibilityIdentifier("task-editor-title")
                 .font(Theme.Typography.editorTitle)
                 .tracking(-0.6)
                 .foregroundColor(Theme.Colors.textPrimary)
                 .textFieldStyle(.plain)
 
             TextField("Заметки", text: $notes, axis: .vertical)
+                .accessibilityIdentifier("task-editor-notes")
                 .font(Theme.Typography.callout)
                 .foregroundColor(Theme.Colors.textSecondary)
                 .lineLimit(2...10)
@@ -149,13 +152,14 @@ struct TaskEditSheet: View {
                         get: { isHighPriorityToday },
                         set: { newValue in
                             Haptics.selection()
-                            withAnimation(.easeInOut(duration: 0.2)) {
+                            withAnimation(reduceMotion ? nil : Theme.Motion.standard) {
                                 isHighPriorityToday = newValue
                             }
                         }
                     )
                 )
                 .labelsHidden()
+                .accessibilityLabel("Высокий приоритет")
                 .tint(Theme.Colors.accent)
             }
             .padding(.horizontal, 14)
@@ -209,7 +213,7 @@ struct TaskEditSheet: View {
                         isOn: Binding(
                             get: { reminderEnabled },
                             set: { enabled in
-                                reminderEnabled = enabled
+                                withAnimation(reduceMotion ? nil : Theme.Motion.standard) { reminderEnabled = enabled }
                                 if enabled { Task { await notifications.enableTaskReminders() } }
                             })
                     )
@@ -358,7 +362,7 @@ struct TaskEditSheet: View {
             reorderSubtasks(fromId: sourceId, toId: subtask.id)
             return true
         } isTargeted: { targeted in
-            withAnimation(.easeInOut(duration: 0.15)) {
+            withAnimation(reduceMotion ? nil : Theme.Motion.quick) {
                 targetedSubtaskId = targeted ? subtask.id : (targetedSubtaskId == subtask.id ? nil : targetedSubtaskId)
             }
         }
@@ -373,6 +377,7 @@ struct TaskEditSheet: View {
                 .frame(width: 32, height: 40)
 
             TextField("Добавить подзадачу", text: $newSubtaskTitle)
+                .accessibilityIdentifier("task-editor-add-subtask")
                 .textFieldStyle(.plain)
                 .font(.system(size: 15))
                 .foregroundColor(Theme.Colors.textPrimary)
@@ -471,7 +476,7 @@ struct TaskEditSheet: View {
         didFinish = true
         isSubtaskFieldFocused = false
         hideKeyboard()
-        withAnimation(.easeInOut(duration: 0.2)) {
+        withAnimation(reduceMotion ? nil : Theme.Motion.standard) {
             TaskDeletionManager.shared.requestDelete(task, context: modelContext)
         }
         dismiss()

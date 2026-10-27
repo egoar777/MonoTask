@@ -2,6 +2,7 @@ import SwiftUI
 import SwiftData
 
 struct FastCaptureBar: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.modelContext) private var modelContext
     let activeTag: Tag?
     @Binding var isCaptureActive: Bool
@@ -54,7 +55,7 @@ struct FastCaptureBar: View {
                 .background(Theme.Colors.fill)
                 .clipShape(Capsule())
                 .fixedSize()
-                .transition(.identity)
+                .transition(.opacity)
             }
 
             SubmitCircleButton(isEnabled: canSubmit, size: 34) {
@@ -73,10 +74,11 @@ struct FastCaptureBar: View {
                 }
                 .buttonStyle(.plain)
                 .fixedSize()
-                .transition(.identity)
+                .transition(.opacity)
                 .accessibilityLabel("Скрыть клавиатуру")
             }
         }
+        .animation(reduceMotion ? nil : Theme.Motion.quick, value: isFocused)
         .padding(.leading, 6)
         .padding(.trailing, 7)
         .frame(height: 52)
@@ -91,6 +93,7 @@ struct FastCaptureBar: View {
         .padding(.top, 4)
         .padding(.bottom, 6)
         .background(Theme.Colors.background)
+        .transaction { $0.animation = nil }
         .onChange(of: isFocused) { _, focused in
             if focused != isCaptureActive {
                 isCaptureActive = focused
@@ -105,8 +108,8 @@ struct FastCaptureBar: View {
             }
         }
         .onAppear {
-            isFocused = false
-            hideKeyboard()
+            isFocused = isCaptureActive
+            if !isCaptureActive { hideKeyboard() }
         }
         .onDisappear {
             isFocused = false

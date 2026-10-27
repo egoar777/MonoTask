@@ -72,6 +72,7 @@ struct TaskCheckbox: View {
 
 // MARK: - Scope Tab
 struct ScopeTab: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let title: String
     var color: Color? = nil
     var count: Int? = nil
@@ -94,6 +95,7 @@ struct ScopeTab: View {
 
                 if let count, count > 0 {
                     Text("\(count)")
+                        .contentTransition(.numericText())
                         .font(Theme.Typography.numeric(11, weight: isSelected ? .bold : .regular))
                         .opacity(isSelected ? 0.7 : 1)
                 }
@@ -113,6 +115,8 @@ struct ScopeTab: View {
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
+        .animation(reduceMotion ? nil : Theme.Motion.quick, value: isSelected)
+        .animation(reduceMotion ? nil : Theme.Motion.quick, value: count)
     }
 }
 
@@ -162,6 +166,7 @@ struct ContextChip: View {
 
 // MARK: - Progress Line
 struct ProgressLine: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let progress: Double
     var tint: Color = Theme.Colors.accent
     var height: CGFloat = 4
@@ -178,7 +183,7 @@ struct ProgressLine: View {
             }
         }
         .frame(height: height)
-        .animation(.easeInOut(duration: 0.3), value: progress)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.4), value: progress)
     }
 }
 
@@ -279,5 +284,45 @@ struct PriorityToggleButton: View {
         }
         .buttonStyle(.plain)
         .help(isOn ? "Снять высокий приоритет" : "Высокий приоритет")
+    }
+}
+
+struct FloatingGlass<S: Shape>: ViewModifier {
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    let shape: S
+    var id: String? = nil
+    var namespace: Namespace.ID? = nil
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if reduceTransparency {
+            content.background(Theme.Colors.surfaceElevated, in: shape)
+                .overlay(shape.stroke(Theme.Colors.ruleStrong, lineWidth: 1))
+        } else if #available(iOS 26.0, macOS 26.0, *) {
+            if let namespace {
+                content.glassEffect(.regular.interactive(), in: shape)
+                    .glassEffectID(id, in: namespace)
+                    .glassEffectTransition(.matchedGeometry)
+            } else {
+                content.glassEffect(.regular.interactive(), in: shape)
+            }
+        } else {
+            content.background(.regularMaterial, in: shape)
+                .overlay(shape.stroke(Theme.Colors.ruleStrong, lineWidth: 0.5))
+        }
+    }
+}
+
+/// Matches the Today title's date row and spacing without showing a subtitle.
+struct ScreenHeading: View {
+    let text: String
+    var body: some View {
+        Text(text)
+            .font(Theme.Typography.display)
+            .tracking(Theme.Typography.displayTracking)
+            .foregroundStyle(Theme.Colors.textPrimary)
+            .frame(height: 43, alignment: .leading)
+            .padding(.top, 40)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

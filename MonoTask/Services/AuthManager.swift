@@ -124,6 +124,8 @@ final class AuthManager {
         email = nil
         activeContainer = nil
         SupabaseService.shared.syncStatus = .idle
+        SupabaseService.shared.hasPendingChanges = false
+        SupabaseService.shared.localChangeRevision = 0
         NotificationService.shared.clearForSignOut()
     }
 }

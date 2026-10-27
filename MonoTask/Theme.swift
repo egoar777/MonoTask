@@ -175,6 +175,11 @@ enum Theme {
     typealias CornerRadius = Radius
 
     // MARK: - Animation
+    enum Motion {
+        static let standard = Animation.easeInOut(duration: 0.28)
+        static let quick = Animation.easeInOut(duration: 0.18)
+    }
+
     enum AnimationDuration {
         static let quick: Double = 0.15
         static let standard: Double = 0.25

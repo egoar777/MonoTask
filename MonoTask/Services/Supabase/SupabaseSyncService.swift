@@ -6,29 +6,37 @@ import Supabase
 final class SupabaseSyncService {
     static let shared = SupabaseSyncService()
 
+    // A refresh view may be recreated as syncStatus changes. Own the request here
+    // so cancellation of the view's task cannot cancel its URLSession requests.
+    private var activeRequest: Task<Void, Error>?
+    private var activeRequestContext: ObjectIdentifier?
+    private var activeRequestToken: UUID?
     private var isSyncInProgress = false
     /// Set when a sync is requested while another one is running; triggers one follow-up sync
     private var needsResync = false
     private var syncDebounceTask: Task<Void, Never>?
+
+    static var usesPreviewTransport: Bool {
+        #if DEBUG && targetEnvironment(simulator)
+        return ProcessInfo.processInfo.arguments.contains("--screenshots")
+            && ProcessInfo.processInfo.arguments.contains("--sync-preview")
+        #else
+        return false
+        #endif
+    }
 
     private init() {}
 
     enum SyncError: LocalizedError {
         case notConfigured
         case notAuthenticated
-        case syncInProgress
-        case networkError(String)
 
         var errorDescription: String? {
             switch self {
             case .notConfigured:
-                return "Supabase не настроен. Проверьте параметры в .env."
+                return "Supabase не настроен. Проверьте SupabaseConfig.plist."
             case .notAuthenticated:
                 return "Войдите в аккаунт для синхронизации."
-            case .syncInProgress:
-                return "Синхронизация уже выполняется."
-            case .networkError(let message):
-                return "Ошибка сети при синхронизации: \(message)"
             }
         }
     }
@@ -41,6 +49,8 @@ final class SupabaseSyncService {
             return
         }
 
+        SupabaseService.shared.hasPendingChanges = true
+        SupabaseService.shared.localChangeRevision += 1
         syncDebounceTask?.cancel()
         syncDebounceTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: UInt64(delaySeconds * 1_000_000_000))
@@ -62,6 +72,43 @@ final class SupabaseSyncService {
 
     /// Remote task and subtask changes take precedence when both sides changed.
     func sync(context: ModelContext) async throws {
+        let contextID = ObjectIdentifier(context)
+        if let request = activeRequest, activeRequestContext == contextID {
+            needsResync = true
+            try await request.value
+            return
+        }
+        let token = UUID()
+        let request = Task { @MainActor in
+            try await self.performSync(context: context)
+        }
+        activeRequest = request
+        activeRequestContext = contextID
+        activeRequestToken = token
+        defer {
+            if activeRequestToken == token {
+                activeRequest = nil
+                activeRequestContext = nil
+                activeRequestToken = nil
+            }
+        }
+        try await request.value
+    }
+
+    private func performSync(context: ModelContext) async throws {
+        #if DEBUG && targetEnvironment(simulator)
+        if Self.usesPreviewTransport {
+            SupabaseService.shared.syncStatus = .syncing
+            do {
+                try await Task.sleep(for: .seconds(1))
+                SupabaseService.shared.syncStatus = .success(.now)
+            } catch {
+                SupabaseService.shared.syncStatus = .error(error.localizedDescription)
+                throw error
+            }
+            return
+        }
+        #endif
         guard SupabaseConfig.shared.isConfigured else {
             throw SyncError.notConfigured
         }
@@ -105,6 +152,7 @@ final class SupabaseSyncService {
         let client = SupabaseClient(
             supabaseURL: url, supabaseKey: SupabaseConfig.shared.anonKey,
             options: .init(auth: .init(accessToken: { token })))
+        let syncRevision = SupabaseService.shared.localChangeRevision
         isSyncInProgress = true
         SupabaseService.shared.syncStatus = .syncing
         print("[SupabaseSync] Starting bi-directional sync (server changes prioritized)...")
@@ -137,6 +185,7 @@ final class SupabaseSyncService {
             NotificationService.shared.refresh(context: context)
             let now = Date.now
             SupabaseConfig.shared.lastSyncDate = now
+            SupabaseService.shared.hasPendingChanges = SupabaseService.shared.localChangeRevision != syncRevision
             SupabaseService.shared.syncStatus = .success(now)
             SupabaseService.shared.connectionStatus = .connected
             print("[SupabaseSync] Sync completed successfully at \(now.formatted(date: .omitted, time: .standard))")

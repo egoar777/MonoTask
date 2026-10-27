@@ -3,6 +3,7 @@ import SwiftData
 
 #if os(macOS)
 struct MacTaskListView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.modelContext) private var modelContext
     @Query(sort: [SortDescriptor(\TaskItem.sortOrder), SortDescriptor(\TaskItem.createdAt, order: .reverse)]) private
         var allTasks: [TaskItem]
@@ -88,6 +89,9 @@ struct MacTaskListView: View {
             .padding(.bottom, 48)
             .frame(maxWidth: 780)
             .frame(maxWidth: .infinity)
+            .animation(reduceMotion ? nil : Theme.Motion.standard, value: filteredTasks.map(\.id))
+            .animation(reduceMotion ? nil : Theme.Motion.standard, value: highPriorityTasks.map(\.id))
+            .animation(reduceMotion ? nil : Theme.Motion.standard, value: completedTasks.map(\.id))
         }
         .background(Theme.Colors.background.ignoresSafeArea())
         .navigationTitle(scope.title(tags: tags))
@@ -258,7 +262,7 @@ struct MacTaskListView: View {
     private var completedSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             Button {
-                withAnimation(.easeInOut(duration: 0.2)) {
+                withAnimation(reduceMotion ? nil : Theme.Motion.standard) {
                     showCompleted.toggle()
                 }
             } label: {
@@ -347,7 +351,7 @@ struct MacTaskListView: View {
     }
 
     private func toggleTaskDone(_ task: TaskItem) {
-        withAnimation(.easeInOut(duration: 0.2)) {
+        withAnimation(reduceMotion ? nil : Theme.Motion.standard) {
             modelContext.setCompleted(task, !task.isDone)
         }
     }
@@ -363,14 +367,30 @@ struct MacTaskRowItem: View {
     let onEdit: (TaskItem) -> Void
     let onToggleDone: () -> Void
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @AppStorage("monotask_show_task_notes") private var showNotes = true
+    @AppStorage("monotask_compact_rows") private var compactRows = false
+    @State private var completing = false
     @State private var isHovered: Bool = false
 
     var body: some View {
         HStack(alignment: .center, spacing: 8) {
             Button {
-                onToggleDone()
+                guard !completing else { return }
+                if task.isDone || reduceMotion {
+                    onToggleDone()
+                } else {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) { completing = true }
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .milliseconds(180))
+                        guard task.modelContext != nil else { return }
+                        onToggleDone()
+                        completing = false
+                    }
+                }
             } label: {
-                TaskCheckbox(isDone: task.isDone, isPriority: task.isHighPriorityToday, size: 19)
+                TaskCheckbox(isDone: task.isDone || completing, isPriority: task.isHighPriorityToday, size: 19)
+                    .scaleEffect(completing ? 1.14 : 1)
                     .frame(width: 30, height: 30)
                     .contentShape(Rectangle())
             }
@@ -390,7 +410,7 @@ struct MacTaskRowItem: View {
 
                     Spacer(minLength: 12)
 
-                    if !task.notes.isEmpty {
+                    if showNotes && !task.notes.isEmpty {
                         Image(systemName: "text.alignleft")
                             .font(.system(size: 10))
                             .foregroundColor(Theme.Colors.textMuted)
@@ -419,7 +439,7 @@ struct MacTaskRowItem: View {
             }
             .buttonStyle(.plain)
         }
-        .padding(.vertical, 6)
+        .padding(.vertical, compactRows ? 3 : 6)
         .background(
             Rectangle()
                 .fill(isTargeted ? Theme.Colors.fillStrong : (isHovered ? Theme.Colors.fill : Color.clear))

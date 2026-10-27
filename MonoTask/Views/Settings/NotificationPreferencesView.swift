@@ -6,6 +6,7 @@ import UIKit
 #endif
 
 struct NotificationPreferencesView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.modelContext) private var context
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.openURL) private var openURL
@@ -149,6 +150,8 @@ struct NotificationPreferencesView: View {
                     .font(Theme.Typography.caption)
                     .foregroundColor(Theme.Colors.textMuted)
                 }
+                .animation(reduceMotion ? nil : Theme.Motion.standard, value: notifications.preferences.enabled)
+                .animation(reduceMotion ? nil : Theme.Motion.standard, value: notifications.preferences.morningPlan)
                 .font(Theme.Typography.callout)
                 .foregroundColor(Theme.Colors.textPrimary)
             }

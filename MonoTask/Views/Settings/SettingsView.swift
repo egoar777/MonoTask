@@ -1,527 +1,449 @@
 import SwiftUI
 import SwiftData
 
+private enum SettingsPage: String, Hashable {
+    case categories = "Категории и расписание"
+    case notifications = "Уведомления"
+    case appearance = "Вид списка задач"
+    case account = "Аккаунт и синхронизация"
+}
+
 struct SettingsView: View {
     @Query(sort: [SortDescriptor(\Tag.sortOrder), SortDescriptor(\Tag.createdAt)]) private var tags: [Tag]
-    @Query private var allTasks: [TaskItem]
-    @Environment(\.modelContext) private var modelContext
+    @Query private var tasks: [TaskItem]
+    @Environment(\.modelContext) private var context
     @Environment(AuthManager.self) private var auth
-
-    @State private var newTagName: String = ""
-    @State private var selectedColorHex: String = Theme.Colors.tagColors.first ?? "#0A84FF"
-    @State private var targetedTagId: UUID? = nil
-    @State private var tagToEdit: Tag? = nil
-    @State private var tagToDelete: Tag? = nil
-    @FocusState private var isNewTagFocused: Bool
-
-    private let orderedWeekdays = Weekday.orderedFromMonday
+    @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var notifications = NotificationService.shared
+    @State private var editingTag: Tag?
+    @State private var addingTag = false
+    @State private var deletingTag: Tag?
+    @State private var confirmingSignOut = false
+    @AppStorage("monotask_show_task_notes") private var showNotes = true
+    @AppStorage("monotask_compact_rows") private var compactRows = false
+    @State private var path: [SettingsPage] = []
 
     var body: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 28) {
-                header
-                scheduleSection
-                contextsSection
-                NotificationPreferencesView()
-                syncSection
-                accountSection
-                footer
+        NavigationStack(path: $path) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 24) {
+                    ScreenHeading(text: "НАСТРОЙКИ")
+                    accountPreview
+                    schedulePreview
+                    VStack(alignment: .leading, spacing: 10) {
+                        GroupCard {
+                            destination(
+                                .notifications, icon: "bell", subtitle: morningSummary,
+                                badge: notificationStatus)
+                            Hairline(leading: 58)
+                            destination(.appearance, icon: "list.bullet.rectangle", subtitle: appearanceSummary)
+                        }
+                    }
+                    HStack {
+                        Text("MONOTASK").font(Theme.Typography.heading(12))
+                        Spacer()
+                        Text("Версия \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0")")
+                            .font(Theme.Typography.eyebrow)
+                    }
+                    .foregroundStyle(Theme.Colors.textMuted)
+                    .padding(.top, 4)
+                }
+                .padding(.horizontal, 20).padding(.bottom, 20)
+                .frame(maxWidth: 700)
+                .frame(maxWidth: .infinity)
             }
-            .padding(.horizontal, Theme.Spacing.screenPadding)
-            .padding(.top, 8)
-            .padding(.bottom, 36)
-            .frame(maxWidth: 860)
-            .frame(maxWidth: .infinity)
+            .background(Theme.Colors.background)
+            .monoScrollEdge()
+            .navigationDestination(for: SettingsPage.self) { page in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 20) {
+                        switch page {
+                        case .categories: categories
+                        case .notifications: NotificationPreferencesView()
+                        case .appearance: appearance
+                        case .account: account
+                        }
+                    }
+                    .padding(20)
+                    .frame(maxWidth: 700)
+                    .frame(maxWidth: .infinity)
+                }
+                .background(Theme.Colors.background)
+                .navigationTitle(page.rawValue)
+                #if os(iOS)
+                .navigationBarTitleDisplayMode(.inline)
+                #endif
+            }
         }
-        .refreshable {
-            try? await SupabaseSyncService.shared.sync(context: modelContext)
-        }
-        .scrollBounceBehavior(.always, axes: .vertical)
-        .scrollDismissesKeyboard(.interactively)
-        .monoScrollEdge()
-        .background(Theme.Colors.background.ignoresSafeArea())
         .tint(Theme.Colors.accent)
-        .sheet(item: $tagToEdit) { tag in
-            TagEditSheet(tagToEdit: tag)
+        .preferredColorScheme(.dark)
+        .task { await notifications.checkAuthorization() }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { Task { await notifications.checkAuthorization() } }
         }
+        .sheet(item: $editingTag) { TagEditSheet(tagToEdit: $0) }
+        .sheet(isPresented: $addingTag) { TagEditSheet(tagToEdit: nil) }
         .confirmationDialog(
-            "Удалить категорию «\(tagToDelete?.name ?? "")»?",
-            isPresented: Binding(get: { tagToDelete != nil }, set: { if !$0 { tagToDelete = nil } }),
+            "Удалить категорию «\(deletingTag?.name ?? "")»?",
+            isPresented: Binding(get: { deletingTag != nil }, set: { if !$0 { deletingTag = nil } }),
             titleVisibility: .visible
         ) {
             Button("Удалить", role: .destructive) {
-                if let tag = tagToDelete {
-                    Haptics.warning()
-                    modelContext.deleteWithSync(tag)
-                    modelContext.saveAndSync(delaySeconds: 0.1)
-                }
-                tagToDelete = nil
-            }
-            Button("Отмена", role: .cancel) {
-                tagToDelete = nil
+                if let tag = deletingTag { context.deleteWithSync(tag); context.saveAndSync() }
+                deletingTag = nil
             }
         } message: {
             Text("Задачи останутся, но потеряют эту категорию.")
         }
-        .task {
-            _ = await SupabaseService.shared.testConnection()
-        }
-    }
-
-    // MARK: - Header
-
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                EyebrowLabel(text: "уведомления и категории")
-                Spacer()
-                SyncIndicator()
+        .confirmationDialog("Выйти из аккаунта?", isPresented: $confirmingSignOut, titleVisibility: .visible) {
+            Button("Выйти", role: .destructive) {
+                if auth.userID != nil { Task { await auth.signOut() } }
             }
-            Text("Настройки".uppercased())
-                .font(Theme.Typography.display)
-                .tracking(Theme.Typography.displayTracking)
-                .foregroundColor(Theme.Colors.textPrimary)
+            Button("Отмена", role: .cancel) {}
         }
-    }
-
-    private func sectionLabel(_ title: String, hint: String? = nil) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            SectionTitle(text: title)
-            if let hint {
-                Text(hint)
-                    .font(Theme.Typography.subtitle)
-                    .foregroundColor(Theme.Colors.textMuted)
+        .onAppear {
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("--settings-categories") { path = [.categories] }
+            if ProcessInfo.processInfo.arguments.contains("--settings-notifications") { path = [.notifications] }
+            if ProcessInfo.processInfo.arguments.contains("--settings-sync") { path = [.account] }
+            if ProcessInfo.processInfo.arguments.contains("--settings-appearance") { path = [.appearance] }
+            if ProcessInfo.processInfo.arguments.contains("--settings-edit") {
+                path = [.categories]; editingTag = tags.first
             }
+            #endif
         }
     }
 
-    // MARK: - Schedule
-
-    private var scheduleSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            sectionLabel("Расписание", hint: "В какие дни категория попадает в «Фокус дня»")
-
-            GroupCard(padding: 14) {
-                if tags.isEmpty {
-                    Text("Сначала добавьте категорию ниже")
-                        .font(Theme.Typography.callout)
-                        .foregroundColor(Theme.Colors.textMuted)
-                } else {
-
-                    HStack(spacing: 0) {
-                        Spacer(minLength: 0)
-                        HStack(spacing: 3) {
-                            ForEach(orderedWeekdays) { day in
-                                Text(day.shortName.uppercased())
-                                    .font(
-                                        Theme.Typography.numeric(9.5, weight: day == Weekday.current ? .bold : .regular)
-                                    )
-                                    .foregroundColor(
-                                        day == Weekday.current ? Theme.Colors.accent : Theme.Colors.textMuted
-                                    )
-                                    .frame(width: 28)
-                            }
-                        }
-                    }
-                    .padding(.bottom, 8)
-
-                    ForEach(Array(tags.enumerated()), id: \.element.id) { index, tag in
-                        if index > 0 {
-                            Hairline()
-                                .padding(.vertical, 6)
-                        }
-                        scheduleRow(tag)
-                    }
+    private func destination(_ page: SettingsPage, icon: String, subtitle: String, badge: String? = nil) -> some View {
+        NavigationLink(value: page) {
+            HStack(spacing: 14) {
+                Image(systemName: icon)
+                    .font(.system(size: 19))
+                    .foregroundStyle(Theme.Colors.accent)
+                    .frame(width: 28)
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(page.rawValue).font(.system(size: 16, weight: .medium)).foregroundStyle(
+                        Theme.Colors.textPrimary)
+                    Text(subtitle).font(Theme.Typography.caption).foregroundStyle(Theme.Colors.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .contentTransition(.opacity)
                 }
+                Spacer(minLength: 0)
+                if let badge {
+                    Text(badge)
+                        .font(Theme.Typography.numeric(10, weight: .medium))
+                        .foregroundStyle(badge == "Вкл." ? Theme.Colors.accent : Theme.Colors.textSecondary)
+                        .padding(.horizontal, 8).padding(.vertical, 5)
+                        .background(Theme.Colors.fillStrong, in: Capsule())
+                }
+                Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)).foregroundStyle(
+                    Theme.Colors.textSecondary)
             }
-        }
+            .padding(16)
+            .frame(minHeight: 76)
+            .contentShape(Rectangle())
+        }.buttonStyle(.plain)
+            .animation(reduceMotion ? nil : Theme.Motion.quick, value: subtitle)
+            .animation(reduceMotion ? nil : Theme.Motion.quick, value: badge)
     }
 
-    private func scheduleRow(_ tag: Tag) -> some View {
-        HStack(spacing: 8) {
-            Circle()
-                .fill(tag.color)
-                .frame(width: 7, height: 7)
-            Text(tag.name)
-                .font(Theme.Typography.callout)
-                .foregroundColor(Theme.Colors.textPrimary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.85)
-
-            Spacer(minLength: 4)
-
-            HStack(spacing: 3) {
-                ForEach(orderedWeekdays) { day in
-                    let isActive = tag.scheduledDays.contains(day)
-                    Button {
-                        Haptics.selection()
-                        toggleDay(day, for: tag)
-                    } label: {
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .fill(isActive ? tag.color : Theme.Colors.fill)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                    .strokeBorder(
-                                        day == Weekday.current && !isActive ? Theme.Colors.ruleStrong : Color.clear,
-                                        lineWidth: 1)
-                            )
-                            .frame(width: 28, height: 28)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("\(tag.name), \(day.fullName)")
-                    .accessibilityValue(isActive ? "включено" : "выключено")
-                }
-            }
-        }
-    }
-
-    // MARK: - Contexts
-
-    private var contextsSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            sectionLabel("Категории", hint: "Перетащите, чтобы изменить порядок")
-
-            GroupCard {
-                ForEach(Array(tags.enumerated()), id: \.element.id) { index, tag in
-                    if index > 0 {
-                        Hairline(leading: 44)
-                    }
-                    contextRow(tag)
-                }
-
-                if !tags.isEmpty {
-                    Hairline()
-                }
-
-                addContextRow
-            }
-        }
-    }
-
-    private func contextRow(_ tag: Tag) -> some View {
-        let openCount = allTasks.filter { task in
-            !task.isDone && task.tags.contains { $0.id == tag.id }
-        }.count
-
-        return HStack(spacing: 10) {
-            Image(systemName: "line.3.horizontal")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundColor(Theme.Colors.textMuted.opacity(0.6))
-                .frame(width: 20)
-
-            Button {
-                tagToEdit = tag
-            } label: {
-                HStack(spacing: 9) {
-                    Circle()
-                        .fill(tag.color)
-                        .frame(width: 8, height: 8)
-                    Text(tag.name)
-                        .font(Theme.Typography.body)
-                        .tracking(Theme.Typography.bodyTracking)
-                        .foregroundColor(Theme.Colors.textPrimary)
-                        .lineLimit(1)
-                    Spacer()
-                    if openCount > 0 {
-                        Text("\(openCount)")
-                            .font(Theme.Typography.numeric(12))
-                            .foregroundColor(Theme.Colors.textMuted)
-                    }
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundColor(Theme.Colors.textMuted)
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-
-            Button {
-                tagToDelete = tag
-            } label: {
-                Image(systemName: "trash")
-                    .font(.system(size: 13))
-                    .foregroundColor(Theme.Colors.textMuted)
-                    .frame(width: 30, height: 30)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Удалить \(tag.name)")
-        }
-        .padding(.horizontal, 14)
-        .frame(minHeight: 50)
-        .background(targetedTagId == tag.id ? Theme.Colors.fillStrong : Color.clear)
-        .contentShape(Rectangle())
-        .draggable(tag.id.uuidString) {
-            HStack(spacing: 8) {
-                Circle()
-                    .fill(tag.color)
-                    .frame(width: 8, height: 8)
-                Text(tag.name)
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundColor(Theme.Colors.textPrimary)
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
-            .background(Theme.Colors.surfaceElevated)
-            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm, style: .continuous))
-        }
-        .dropDestination(for: String.self) { items, _ in
-            targetedTagId = nil
-            guard let sourceIdString = items.first,
-                let sourceId = UUID(uuidString: sourceIdString),
-                sourceId != tag.id
-            else { return false }
-            reorderTags(fromId: sourceId, toId: tag.id)
-            return true
-        } isTargeted: { targeted in
-            withAnimation(.easeInOut(duration: 0.15)) {
-                targetedTagId = targeted ? tag.id : (targetedTagId == tag.id ? nil : targetedTagId)
-            }
-        }
-    }
-
-    private var addContextRow: some View {
-        let canAdd = !newTagName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        return VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 10) {
-                Circle()
-                    .fill(Theme.Colors.tagColor(selectedColorHex))
-                    .frame(width: 8, height: 8)
-                    .frame(width: 20)
-
-                TextField("Новая категория", text: $newTagName)
-                    .textFieldStyle(.plain)
-                    .font(Theme.Typography.body)
-                    .foregroundColor(Theme.Colors.textPrimary)
-                    .focused($isNewTagFocused)
-                    .submitLabel(.done)
-                    .onSubmit {
-                        handleAddTag()
-                    }
-
-                SubmitCircleButton(isEnabled: canAdd, size: 28) {
-                    handleAddTag()
-                }
-            }
-
-            HStack(spacing: 10) {
-                ForEach(Theme.Colors.tagColors, id: \.self) { hex in
-                    let isSelected = selectedColorHex == hex
-                    Button {
-                        Haptics.selection()
-                        selectedColorHex = hex
-                    } label: {
-                        Circle()
-                            .fill(Theme.Colors.tagColor(hex))
-                            .frame(width: 18, height: 18)
-                            .padding(3)
-                            .overlay(
-                                Circle()
-                                    .stroke(isSelected ? Theme.Colors.textPrimary : Color.clear, lineWidth: 1.5)
-                            )
-                            .contentShape(Circle())
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(.leading, 26)
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-    }
-
-    // MARK: - Sync
-
-    private var accountSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            sectionLabel("Аккаунт")
-            GroupCard {
+    private var accountPreview: some View {
+        NavigationLink(value: SettingsPage.account) {
+            VStack(alignment: .leading, spacing: 14) {
                 HStack {
-                    Text(auth.email ?? "")
-                        .font(Theme.Typography.callout)
-                        .foregroundColor(Theme.Colors.textPrimary)
+                    EyebrowLabel(text: "Аккаунт и синхронизация", color: Theme.Colors.textSecondary)
                     Spacer()
-                    Button("Выйти") {
-                        Task { await auth.signOut() }
-                    }
-                    .disabled(auth.isBusy)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Theme.Colors.textSecondary)
                 }
-                .padding(14)
+                Text(auth.email ?? (SyncPresentation.isPreview ? "Демонстрационный аккаунт" : "Локальное пространство"))
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(Theme.Colors.textPrimary)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                HStack(spacing: 7) {
+                    Image(systemName: SyncPresentation.icon).font(.system(size: 13))
+                    Text(SyncPresentation.title).font(Theme.Typography.caption)
+                    Spacer(minLength: 0)
+                    if SyncPresentation.isPreview {
+                        Text("Демоданные").font(Theme.Typography.eyebrow).foregroundStyle(Theme.Colors.textMuted)
+                    }
+                }
+                .foregroundStyle(SyncPresentation.color)
+                .contentTransition(.opacity)
             }
-            if let error = auth.errorMessage {
-                Text(error).foregroundColor(Theme.Colors.danger)
-            }
+            .padding(18)
+            .background(Theme.Colors.surfaceElevated, in: RoundedRectangle(cornerRadius: Theme.Radius.card))
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.Radius.card).strokeBorder(Theme.Colors.ruleStrong, lineWidth: 1)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: Theme.Radius.card))
         }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("settings-account")
+        .animation(reduceMotion ? nil : Theme.Motion.quick, value: SyncPresentation.title)
     }
 
-    private var syncSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            sectionLabel("Синхронизация")
-
-            GroupCard {
-                HStack(spacing: 12) {
-                    Circle()
-                        .fill(statusColor)
-                        .frame(width: 8, height: 8)
-                        .frame(width: 20)
-
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(statusTitle)
-                            .font(Theme.Typography.callout.weight(.medium))
-                            .foregroundColor(Theme.Colors.textPrimary)
-                            .lineLimit(2)
-
-                        Text(lastSyncText)
-                            .font(Theme.Typography.numeric(11))
-                            .foregroundColor(Theme.Colors.textMuted)
+    private var schedulePreview: some View {
+        GroupCard(padding: 16) {
+            NavigationLink(value: SettingsPage.categories) {
+                HStack(spacing: 8) {
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text("Категории и расписание")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(Theme.Colors.textPrimary)
+                        Text("Фокус по дням недели")
+                            .font(Theme.Typography.caption).foregroundStyle(Theme.Colors.textSecondary)
                     }
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.Colors.textSecondary)
+                }
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
+            }.buttonStyle(.plain)
 
-                    Spacer()
-
+            if tags.isEmpty {
+                Text("Добавьте категорию и выберите дни фокуса.")
+                    .font(Theme.Typography.callout).foregroundStyle(Theme.Colors.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 16)
+                Button {
+                    addingTag = true
+                } label: {
+                    Label("Новая категория", systemImage: "plus")
+                        .font(Theme.Typography.callout)
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                }.buttonStyle(.plain).foregroundStyle(Theme.Colors.accent)
+            } else {
+                Hairline().padding(.top, 14).padding(.bottom, 10)
+                HStack {
+                    Text("Категория").font(Theme.Typography.eyebrow).foregroundStyle(Theme.Colors.textMuted)
+                    Spacer(minLength: 8)
+                    HStack(spacing: 4) {
+                        ForEach(Weekday.orderedFromMonday) { day in
+                            Text(day.shortName.uppercased())
+                                .font(Theme.Typography.numeric(9, weight: day == .current ? .bold : .regular))
+                                .foregroundStyle(day == .current ? Theme.Colors.accent : Theme.Colors.textMuted)
+                                .frame(width: 19)
+                        }
+                    }
+                }.padding(.bottom, 4)
+                ForEach(tags.prefix(4)) { tag in
                     Button {
-                        Haptics.selection()
-                        Task { @MainActor in
-                            try? await SupabaseSyncService.shared.sync(context: modelContext)
-                        }
+                        editingTag = tag
                     } label: {
-                        Group {
-                            if SupabaseService.shared.syncStatus.isSyncing {
-                                ProgressView()
-                                    .controlSize(.small)
-                            } else {
-                                Image(systemName: "arrow.triangle.2.circlepath")
-                                    .font(.system(size: 13, weight: .semibold))
-                                    .foregroundColor(Theme.Colors.textPrimary)
-                            }
+                        HStack(spacing: 8) {
+                            Circle().fill(tag.color).frame(width: 7, height: 7)
+                            Text(tag.name)
+                                .font(Theme.Typography.callout)
+                                .foregroundStyle(Theme.Colors.textPrimary)
+                                .lineLimit(1)
+                            Spacer(minLength: 8)
+                            HStack(spacing: 4) {
+                                ForEach(Weekday.orderedFromMonday) { day in
+                                    let active = tag.scheduledDays.contains(day)
+                                    RoundedRectangle(cornerRadius: 4)
+                                        .fill(active ? tag.color.opacity(0.85) : Theme.Colors.fillStrong)
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 4).strokeBorder(
+                                                day == .current ? Theme.Colors.textSecondary : .clear, lineWidth: 1)
+                                        )
+                                        .frame(width: 19, height: 19)
+                                }
+                            }.accessibilityHidden(true)
                         }
-                        .frame(width: 34, height: 34)
-                        .overlay(Circle().strokeBorder(Theme.Colors.ruleStrong, lineWidth: 1))
+                        .frame(minHeight: 44)
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .disabled(SupabaseService.shared.syncStatus.isSyncing)
-                    .help("Синхронизировать сейчас")
+                    .accessibilityLabel("\(tag.name), \(scheduleText(tag))")
+                    .accessibilityHint("Открыть расписание категории")
+                    .accessibilityIdentifier("settings-preview-" + tag.id.uuidString)
                 }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 12)
-
-                Hairline(leading: 46)
-
-                HStack(spacing: 12) {
-                    Image(systemName: "icloud")
-                        .font(.system(size: 13))
-                        .foregroundColor(Theme.Colors.textMuted)
-                        .frame(width: 20)
-                    Text("Задачи хранятся в Supabase и работают офлайн")
-                        .font(Theme.Typography.caption)
-                        .foregroundColor(Theme.Colors.textSecondary)
+                if tags.count > 4 {
+                    NavigationLink(value: SettingsPage.categories) {
+                        Text("Все категории · \(tags.count)")
+                            .font(Theme.Typography.caption)
+                            .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
+                    }.buttonStyle(.plain).foregroundStyle(Theme.Colors.accent)
                 }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 12)
             }
         }
     }
 
-    private var lastSyncText: String {
-        guard let lastSync = SupabaseConfig.shared.lastSyncDate else {
-            return "ЕЩЁ НЕ СИНХРОНИЗИРОВАНО"
-        }
-        return "ПОСЛЕДНЯЯ · \(lastSync.formattedDateTime)"
+    private var morningSummary: String {
+        guard notifications.preferences.morningPlan else { return "Утренний план выключен" }
+        let time = String(
+            format: "%02d:%02d", notifications.preferences.morningHour, notifications.preferences.morningMinute)
+        return notifications.preferences.enabled ? "Утренний план в \(time)" : "План в \(time) · неактивен"
     }
 
-    private var statusColor: Color {
-        if SupabaseService.shared.syncStatus.isSyncing {
-            return Theme.Colors.textSecondary
-        }
-        switch SupabaseService.shared.connectionStatus {
-        case .connected: return Theme.Colors.success
-        case .offline, .notConfigured: return Theme.Colors.warning
-        case .checking: return Theme.Colors.textSecondary
-        case .error: return Theme.Colors.danger
+    private var notificationStatus: String {
+        guard notifications.preferences.enabled else { return "Выкл." }
+        switch notifications.authorization {
+        case .denied: return "Нет доступа"
+        case .notDetermined: return "Разрешить"
+        default: return "Вкл."
         }
     }
 
-    private var statusTitle: String {
-        if SupabaseService.shared.syncStatus.isSyncing {
-            return "Синхронизация…"
+    private var appearanceSummary: String {
+        (compactRows ? "Компактные строки" : "Обычные строки") + " · " + (showNotes ? "с заметками" : "без заметок")
+    }
+
+    private var categories: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Выберите категорию, чтобы настроить цвет и дни фокуса. Для изменения порядка перетащите строку.")
+                .font(Theme.Typography.callout).foregroundStyle(Theme.Colors.textSecondary)
+            GroupCard {
+                ForEach(tags) { tag in
+                    Button {
+                        editingTag = tag
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: "line.3.horizontal").foregroundStyle(Theme.Colors.textSecondary)
+                            Circle().fill(tag.color).frame(width: 9, height: 9)
+                            VStack(alignment: .leading, spacing: 5) {
+                                Text(tag.name).font(Theme.Typography.body).foregroundStyle(Theme.Colors.textPrimary)
+                                Text(scheduleText(tag)).font(Theme.Typography.caption).foregroundStyle(
+                                    Theme.Colors.textSecondary)
+                            }
+                            Spacer()
+                            Text("\(tasks.filter { !$0.isDone && $0.tags.contains { $0.id == tag.id } }.count)")
+                                .font(Theme.Typography.numeric(13)).foregroundStyle(Theme.Colors.textSecondary)
+                            Image(systemName: "chevron.right").font(.system(size: 12)).foregroundStyle(
+                                Theme.Colors.textSecondary)
+                        }.padding(16).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .draggable(tag.id.uuidString)
+                    .dropDestination(for: String.self) { items, _ in
+                        guard let raw = items.first, let from = UUID(uuidString: raw) else { return false }
+                        return reorder(from: from, onto: tag.id)
+                    }
+                    .contextMenu { Button("Удалить категорию", role: .destructive) { deletingTag = tag } }
+                    Hairline(leading: 48)
+                }
+                Button {
+                    addingTag = true
+                } label: {
+                    Label("Новая категория", systemImage: "plus").frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(18)
+                }.buttonStyle(.plain).foregroundStyle(Theme.Colors.accent)
+            }
         }
-        switch SupabaseService.shared.connectionStatus {
-        case .connected: return "Облако подключено"
-        case .offline: return "Офлайн — изменения сохраняются локально"
-        case .checking: return "Проверка соединения…"
-        case .error(let msg): return "Ошибка: \(msg)"
-        case .notConfigured: return "Облако не настроено"
+    }
+
+    private var appearance: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            Text("Настройте, как задачи отображаются в списке на главном экране.")
+                .font(Theme.Typography.callout)
+                .foregroundStyle(Theme.Colors.textSecondary)
+            GroupCard(padding: 16) {
+                EyebrowLabel(text: "Пример списка")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.bottom, 12)
+                HStack(spacing: 10) {
+                    TaskCheckbox(isDone: false)
+                        .frame(width: 30, height: 36)
+                        .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Подготовить план на завтра")
+                            .font(Theme.Typography.body)
+                            .foregroundStyle(Theme.Colors.textPrimary)
+                            .accessibilityIdentifier("settings-preview-task")
+                        HStack(spacing: 6) {
+                            Circle().fill(tags.first?.color ?? Theme.Colors.accent).frame(width: 6, height: 6)
+                            Text(tags.first?.name ?? "Категория")
+                                .font(Theme.Typography.caption).foregroundStyle(Theme.Colors.textSecondary)
+                            if showNotes {
+                                Text("Выбрать три главные задачи")
+                                    .font(Theme.Typography.caption).foregroundStyle(Theme.Colors.textMuted)
+                                    .lineLimit(1)
+                                    .accessibilityIdentifier("settings-preview-notes")
+                                    .transition(.opacity)
+                            }
+                        }
+                    }.frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .padding(.vertical, compactRows ? 8 : 12)
+                Hairline()
+            }
+            .animation(reduceMotion ? nil : Theme.Motion.standard, value: showNotes)
+            .animation(reduceMotion ? nil : Theme.Motion.standard, value: compactRows)
+
+            GroupCard(padding: 18) {
+                Toggle(isOn: $showNotes) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Заметки в списке").font(Theme.Typography.body)
+                        Text("Показывать текст заметки, не открывая задачу.")
+                            .font(Theme.Typography.caption).foregroundStyle(Theme.Colors.textSecondary)
+                    }
+                }
+                .accessibilityLabel("Показывать заметки в списке")
+                Hairline().padding(.vertical, 16)
+                Toggle(isOn: $compactRows) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Компактные строки задач").font(Theme.Typography.body)
+                        Text("Меньше отступов — больше задач на экране.")
+                            .font(Theme.Typography.caption).foregroundStyle(Theme.Colors.textSecondary)
+                    }
+                }
+                .accessibilityLabel("Компактные строки задач")
+            }
+            .foregroundStyle(Theme.Colors.textPrimary)
         }
     }
 
-    // MARK: - Footer
-
-    private var footer: some View {
-        VStack(spacing: 4) {
-            Text("MONOTASK")
-                .font(Theme.Typography.heading(13))
-                .foregroundColor(Theme.Colors.textSecondary)
-            EyebrowLabel(text: "версия \(appVersion)")
+    private var account: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            GroupCard(padding: 18) {
+                Text(auth.email ?? "Локальное пространство")
+                    .font(Theme.Typography.body).frame(maxWidth: .infinity, alignment: .leading)
+            }
+            GroupCard(padding: 18) { SyncDetailsView() }
+            if auth.userID != nil || SyncPresentation.isPreview {
+                Button {
+                    confirmingSignOut = true
+                } label: {
+                    Label("Выйти из аккаунта", systemImage: "rectangle.portrait.and.arrow.right")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(Theme.Colors.danger)
+                        .frame(maxWidth: .infinity, minHeight: 52)
+                        .background(Theme.Colors.dangerMuted, in: RoundedRectangle(cornerRadius: Theme.Radius.card))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: Theme.Radius.card)
+                                .strokeBorder(Theme.Colors.danger.opacity(0.3), lineWidth: 1)
+                        )
+                        .contentShape(RoundedRectangle(cornerRadius: Theme.Radius.card))
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("settings-sign-out")
+                .disabled(auth.isBusy)
+                .padding(.top, 4)
+            }
+            if let error = auth.errorMessage { Text(error).foregroundStyle(Theme.Colors.danger) }
         }
-        .frame(maxWidth: .infinity)
-        .padding(.top, 8)
     }
 
-    private var appVersion: String {
-        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
+    private func scheduleText(_ tag: Tag) -> String {
+        let days = Weekday.orderedFromMonday.filter { tag.scheduledDays.contains($0) }
+        if days.count == 7 { return "Каждый день" }
+        if days.isEmpty { return "Дни фокуса не выбраны" }
+        if days == Array(Weekday.orderedFromMonday.prefix(5)) { return "Пн–Пт" }
+        return days.map(\.shortName).joined(separator: ", ")
     }
 
-    // MARK: - Actions
-
-    private func reorderTags(fromId: UUID, toId: UUID) {
-        guard let fromIndex = tags.firstIndex(where: { $0.id == fromId }),
-            let toIndex = tags.firstIndex(where: { $0.id == toId }),
-            fromIndex != toIndex
-        else { return }
-
-        Haptics.selection()
-        var updated = tags
-        let item = updated.remove(at: fromIndex)
-        updated.insert(item, at: toIndex)
-
-        for (index, tag) in updated.enumerated() where tag.sortOrder != index {
-            tag.sortOrder = index
-            // Without bumping updatedAt the next pull treats the server order as newer and reverts it
-            tag.touch()
-        }
-        modelContext.saveAndSync(delaySeconds: 0.4)
+    private func reorder(from: UUID, onto: UUID) -> Bool {
+        guard let source = tags.firstIndex(where: { $0.id == from }),
+            let target = tags.firstIndex(where: { $0.id == onto }), source != target
+        else { return false }
+        var result = tags
+        result.insert(result.remove(at: source), at: target)
+        for (index, tag) in result.enumerated() where tag.sortOrder != index { tag.sortOrder = index; tag.touch() }
+        context.saveAndSync()
+        return true
     }
-
-    private func toggleDay(_ day: Weekday, for tag: Tag) {
-        if tag.scheduledDays.contains(day) {
-            tag.scheduledDays.removeAll { $0 == day }
-        } else {
-            tag.scheduledDays.append(day)
-        }
-        modelContext.saveAndSync(delaySeconds: 0.3)
-    }
-
-    private func handleAddTag() {
-        let trimmed = newTagName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-
-        Haptics.success()
-        let nextSortOrder = (tags.map(\.sortOrder).max() ?? -1) + 1
-        let newTag = Tag(
-            name: String(trimmed.prefix(24)),
-            colorHex: selectedColorHex,
-            iconName: "bookmark.fill",
-            scheduledDays: [Weekday.current],
-            sortOrder: nextSortOrder
-        )
-        modelContext.insert(newTag)
-        modelContext.saveAndSync(delaySeconds: 0.3)
-
-        newTagName = ""
-        isNewTagFocused = false
-    }
-}
-
-#Preview {
-    SettingsView()
 }
