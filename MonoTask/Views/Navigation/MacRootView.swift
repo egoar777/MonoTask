@@ -5,6 +5,7 @@ enum SidebarSelection: Hashable {
     case list(TaskScope)
     case activity
     case settings
+    case shared
 }
 
 #if os(macOS)
@@ -131,6 +132,8 @@ struct MacRootView: View {
             }
 
             Section {
+                sidebarRow(
+                    .shared, title: "Общие списки", icon: "person.2", tint: Theme.Colors.textSecondary, count: nil)
                 sidebarRow(
                     .activity, title: "Аналитика", icon: "square.grid.3x3", tint: Theme.Colors.textSecondary, count: nil
                 )
@@ -272,6 +275,8 @@ struct MacRootView: View {
         case .activity:
             HeatmapView()
                 .padding(.top, 12)
+        case .shared:
+            SharedListsView(isEmbedded: true)
         case .settings:
             SettingsView()
                 .padding(.top, 12)

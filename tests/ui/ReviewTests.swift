@@ -379,3 +379,105 @@ final class TaskEditingTests: XCTestCase {
         app.buttons["Отмена"].tap()
     }
 }
+
+@MainActor
+final class SharedListUITests: XCTestCase {
+    private func launch() -> XCUIApplication {
+        continueAfterFailure = false
+        let app = XCUIApplication(bundleIdentifier: "com.monotask")
+        app.launchArguments = ["--screenshots", "--shared-preview", "--settings"]
+        app.launch()
+        XCTAssertTrue(app.buttons["settings-shared-lists"].waitForExistence(timeout: 10))
+        app.buttons["settings-shared-lists"].tap()
+        XCTAssertTrue(app.buttons["shared-create-list"].waitForExistence(timeout: 5))
+        return app
+    }
+
+    func testSharedTaskNotesSubtaskAndCompletion() {
+        let app = launch()
+        app.buttons["shared-list-33333333-3333-3333-3333-333333333333"].tap()
+        app.buttons["shared-add-task"].tap()
+        let title = app.descendants(matching: .any).matching(identifier: "shared-task-title").firstMatch
+        XCTAssertTrue(title.waitForExistence(timeout: 4))
+        XCTAssertFalse(app.buttons["shared-save-task"].isEnabled)
+        title.tap()
+        title.typeText("Совместная проверка")
+        let notes = app.descendants(matching: .any).matching(identifier: "shared-task-notes").firstMatch
+        notes.tap()
+        notes.typeText("Общие заметки")
+        let subtask = app.textFields["shared-subtask-input"]
+        if !subtask.isHittable { app.swipeUp() }
+        subtask.tap()
+        subtask.typeText("Первый шаг")
+        app.buttons["Добавить"].tap()
+        app.buttons["shared-save-task"].tap()
+        let task = app.staticTexts["Совместная проверка"]
+        XCTAssertTrue(task.waitForExistence(timeout: 4))
+        task.tap()
+        XCTAssertTrue(notes.waitForExistence(timeout: 4))
+        XCTAssertEqual(notes.value as? String, "Общие заметки")
+        XCTAssertEqual(app.textFields["Подзадача"].firstMatch.value as? String, "Первый шаг")
+        let done = app.switches["Выполнено"]
+        done.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.5)).tap()
+        XCTAssertEqual(done.value as? String, "1")
+        app.buttons["shared-save-task"].tap()
+        XCTAssertTrue(app.staticTexts["1 / 2 выполнено"].waitForExistence(timeout: 4))
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = "SharedListTasks"
+        shot.lifetime = .keepAlways
+        add(shot)
+    }
+
+    func testOwnerCanCreateInviteAndRemoveParticipant() {
+        let app = launch()
+        app.buttons["shared-list-33333333-3333-3333-3333-333333333333"].tap()
+        app.buttons["shared-manage-members"].tap()
+        XCTAssertTrue(app.staticTexts["Саша"].waitForExistence(timeout: 4))
+        let create = app.buttons["shared-create-invite"]
+        if !create.isHittable { app.swipeUp() }
+        create.tap()
+        XCTAssertTrue(app.staticTexts["shared-generated-code"].waitForExistence(timeout: 4))
+        XCTAssertEqual(app.staticTexts["shared-generated-code"].label.count, 32)
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = "SharedListInvitation"
+        shot.lifetime = .keepAlways
+        add(shot)
+        app.swipeDown()
+        app.buttons["Удалить"].tap()
+        app.buttons["Подтвердить"].tap()
+        XCTAssertFalse(app.staticTexts["Саша"].exists)
+    }
+
+    func testInvitationOpensJoinSheet() {
+        let app = XCUIApplication(bundleIdentifier: "com.monotask")
+        app.launchArguments = ["--screenshots", "--shared-preview"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["СЕГОДНЯ"].waitForExistence(timeout: 10))
+        let code = "0123456789abcdef0123456789abcdef"
+        app.open(URL(string: "com.monotask.ios://join?code=\(code)")!)
+        let field = app.textFields["shared-invite-code"]
+        XCTAssertTrue(field.waitForExistence(timeout: 8))
+        XCTAssertEqual(field.value as? String, code)
+        XCTAssertTrue(app.buttons["Принять"].isEnabled)
+        app.buttons["Принять"].tap()
+        XCTAssertTrue(app.buttons["shared-add-task"].waitForExistence(timeout: 5))
+    }
+
+    func testCreateListAndValidateJoinInput() {
+        let app = launch()
+        app.buttons["shared-join-list"].tap()
+        let code = app.textFields["shared-invite-code"]
+        XCTAssertTrue(code.waitForExistence(timeout: 4))
+        code.tap()
+        code.typeText("invalid")
+        XCTAssertFalse(app.buttons["Принять"].isEnabled)
+        app.buttons["Отмена"].tap()
+        app.buttons["shared-create-list"].tap()
+        let name = app.alerts.textFields.firstMatch
+        XCTAssertTrue(name.waitForExistence(timeout: 4))
+        name.typeText("Новый общий список")
+        app.alerts.buttons["Создать"].tap()
+        XCTAssertTrue(app.buttons["shared-add-task"].waitForExistence(timeout: 4))
+        XCTAssertTrue(app.staticTexts["0 / 0 выполнено"].exists)
+    }
+}

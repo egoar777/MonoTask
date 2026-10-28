@@ -91,6 +91,17 @@ struct FocusHeroCard: View {
                         ForEach(tags) { tag in
                             pill(.tag(tag.id), title: tag.name, color: tag.color)
                         }
+                        Button {
+                            SharedListStore.shared.isPresented = true
+                        } label: {
+                            Label("Общие", systemImage: "person.2")
+                                .font(Theme.Typography.numeric(12))
+                                .padding(.horizontal, 14).frame(minHeight: 36)
+                                .foregroundStyle(Theme.Colors.textSecondary)
+                                .background(Theme.Colors.fill, in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("open-shared-lists")
                     }
                     .padding(.horizontal, Theme.Spacing.screenPadding)
                     .padding(.vertical, 16)

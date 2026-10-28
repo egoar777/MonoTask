@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <meta name="referrer" content="no-referrer">
+  <meta name="description" content="Присоединяйтесь к общему списку в MonoTask. Задачи, заметки и прогресс — вместе.">
+  <meta property="og:title" content="Вас пригласили в MonoTask">
+  <meta property="og:description" content="Общий список задач. Один план — на всех.">
+  <meta property="og:image" content="https://raw.githubusercontent.com/egoar777/MonoTask/main/MonoTask/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png">
+  <meta property="og:type" content="website">
+  <title>Приглашение · MonoTask</title>
+  <link rel="icon" href="https://raw.githubusercontent.com/egoar777/MonoTask/main/MonoTask/Resources/Assets.xcassets/AppIcon.appiconset/icon_128x128@2x.png">
+  <link rel="stylesheet" href="join.css">
+  <script src="join.js" defer></script>
+</head>
+<body>
+  <main>
+    <a class="brand" href="https://github.com/egoar777/MonoTask" aria-label="MonoTask на GitHub">
+      <img src="https://raw.githubusercontent.com/egoar777/MonoTask/main/MonoTask/Resources/Assets.xcassets/AppIcon.appiconset/icon_128x128@2x.png" width="48" height="48" alt="">
+      <span>MonoTask</span>
+    </a>
+    <section class="card" aria-labelledby="title">
+      <div class="eyebrow"><span class="dot"></span> ОБЩИЙ СПИСОК</div>
+      <h1 id="title">ОДИН ПЛАН.<br><span>ВМЕСТЕ.</span></h1>
+      <p class="intro">Вас пригласили в общий список.<br>Задачи, заметки и прогресс — в одном месте.</p>
+      <div class="actions">
+        <a id="open" class="primary" aria-disabled="true">Открыть в MonoTask <span aria-hidden="true">↗</span></a>
+        <button id="copy" class="secondary" type="button" disabled>Скопировать код</button>
+      </div>
+      <p id="status" class="status" role="status" aria-live="polite">Загружаем приглашение…</p>
+      <div id="manual" hidden>
+        <label for="code">Код или ссылка приглашения</label>
+        <input id="code" type="text" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="Вставьте приглашение">
+      </div>
+      <details>
+        <summary>Приложение не открылось?</summary>
+        <p>Установите актуальную версию MonoTask на iPhone или Mac и войдите в аккаунт. Затем нажмите «Открыть в MonoTask» ещё раз.</p>
+        <p>Или скопируйте код: в приложении откройте <strong>Настройки → Общие списки → Присоединиться</strong> и вставьте его.</p>
+        <p>Если ссылка открыта внутри мессенджера, попробуйте открыть её в Safari.</p>
+      </details>
+      <noscript><p>Для открытия приглашения включите JavaScript. Или скопируйте код после # в адресе и вставьте его в «Общие списки → Присоединиться» в приложении.</p></noscript>
+    </section>
+    <footer>Доступ появится после вашего подтверждения в приложении.<br>Приглашение одноразовое и действует 72 часа.</footer>
+  </main>
+</body>
+</html>

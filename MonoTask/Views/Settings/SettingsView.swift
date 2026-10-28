@@ -30,6 +30,16 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 24) {
                     ScreenHeading(text: "НАСТРОЙКИ")
                     accountPreview
+                    GroupCard {
+                        Button {
+                            SharedListStore.shared.isPresented = true
+                        } label: {
+                            Label("Общие списки", systemImage: "person.2")
+                                .font(Theme.Typography.body)
+                                .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
+                                .padding(.horizontal, 18)
+                        }.buttonStyle(.plain).accessibilityIdentifier("settings-shared-lists")
+                    }
                     schedulePreview
                     VStack(alignment: .leading, spacing: 10) {
                         GroupCard {

@@ -7,6 +7,7 @@ import UIKit
 struct ContentView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Query private var allTasks: [TaskItem]
+    @State private var sharedLists = SharedListStore.shared
     @State private var selectedTab: AppTab = .today
     @State private var isCaptureActive: Bool = false
     @State private var captureDraft = ""
@@ -27,6 +28,7 @@ struct ContentView: View {
     var body: some View {
         #if os(macOS)
         MacRootView(initialTab: selectedTab)
+            .sheet(isPresented: $sharedLists.isPresented) { SharedListsView() }
             .overlay(alignment: .bottom) {
                 UndoDeletionToast().padding(.bottom, 20)
             }
@@ -60,6 +62,7 @@ struct ContentView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.Colors.background.ignoresSafeArea())
 
+        .sheet(isPresented: $sharedLists.isPresented) { SharedListsView() }
         .onChange(of: selectedTab) { _, _ in
             isCaptureActive = false
             hideKeyboard()

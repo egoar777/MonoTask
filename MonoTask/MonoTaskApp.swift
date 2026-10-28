@@ -16,7 +16,15 @@ struct MonoTaskApp: App {
             rootView
                 .environment(auth)
                 .preferredColorScheme(Theme.colorScheme)
-                .onOpenURL { url in Task { await auth.handleAuthURL(url) } }
+                .onOpenURL { url in
+                    if !SharedListStore.shared.receiveInvitation(url) {
+                        Task { await auth.handleAuthURL(url) }
+                    }
+                }
+                .task(id: auth.userID) {
+                    SharedListStore.shared.activateAccount()
+                    await SharedListStore.shared.sync()
+                }
                 .onReceive(NotificationCenter.default.publisher(for: .networkRestored)) { _ in syncActiveStore() }
                 .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged)) { _ in syncActiveStore() }
                 .onReceive(NotificationCenter.default.publisher(for: .NSSystemTimeZoneDidChange)) { _ in
@@ -47,6 +55,7 @@ struct MonoTaskApp: App {
     }
 
     private func syncActiveStore() {
+        Task { await SharedListStore.shared.sync() }
         guard auth.userID != nil, let container = auth.activeContainer,
             NetworkMonitor.shared.isConnected
         else { return }
