@@ -448,6 +448,35 @@ final class SharedListUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["Саша"].exists)
     }
 
+    func testLiveHTTPSInvitationOpensApp() throws {
+        guard ProcessInfo.processInfo.environment["MONOTASK_TEST_LIVE_INVITE"] == "1" else {
+            throw XCTSkip("Requires the published invitation page; enable MONOTASK_TEST_LIVE_INVITE=1")
+        }
+        let app = XCUIApplication(bundleIdentifier: "com.monotask")
+        app.launchArguments = ["--screenshots", "--shared-preview"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["СЕГОДНЯ"].waitForExistence(timeout: 10))
+        let safari = XCUIApplication(bundleIdentifier: "com.apple.mobilesafari")
+        safari.open(URL(string: "https://egoar777.github.io/MonoTask/join/#0123456789abcdef0123456789abcdef")!)
+        let link = safari.links.matching(NSPredicate(format: "label BEGINSWITH 'Открыть в MonoTask'")).firstMatch
+        XCTAssertTrue(link.waitForExistence(timeout: 20))
+        let shot = XCTAttachment(screenshot: safari.screenshot())
+        shot.name = "HTTPSInvitationMobile"
+        shot.lifetime = .keepAlways
+        add(shot)
+        XCTAssertTrue(
+            safari.staticTexts["Нажмите, чтобы открыть приглашение в приложении."].waitForExistence(timeout: 15))
+        // Let the web font finish laying out before tapping the native link coordinates.
+        Thread.sleep(forTimeInterval: 1)
+        link.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        let confirmation = safari.buttons.matching(NSPredicate(format: "label == 'Open' OR label == 'Открыть'"))
+            .firstMatch
+        if confirmation.waitForExistence(timeout: 4) { confirmation.tap() }
+        XCTAssertTrue(app.textFields["shared-invite-code"].waitForExistence(timeout: 10))
+        XCTAssertEqual(app.textFields["shared-invite-code"].value as? String, "0123456789abcdef0123456789abcdef")
+        XCTAssertTrue(app.buttons["Принять"].isEnabled)
+    }
+
     func testInvitationOpensJoinSheet() {
         let app = XCUIApplication(bundleIdentifier: "com.monotask")
         app.launchArguments = ["--screenshots", "--shared-preview"]

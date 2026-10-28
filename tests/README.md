@@ -105,3 +105,7 @@ swiftc -swift-version 6 MonoTask/Models/*.swift MonoTask/Theme.swift \
 ## Совместные списки (2.1)
 
 Команды проверок, схема доступа, применение миграции и границы испытаний описаны в [docs/SHARED-LISTS.md](../docs/SHARED-LISTS.md). Полный UI-прогон теперь содержит 21 тест, включая три `SharedListUITests`. Их демонстрационный режим не использует реальные аккаунты.
+
+### HTTPS-приглашения
+
+`node --test tests/shared/invitation-web.test.cjs` проверяет новые ссылки, старую схему, повреждённые коды и подмену домена. UI-сценарий `SharedListUITests/testInvitationOpensJoinSheet` проверяет передачу кода в форму и подтверждение в демонстрационном списке. Дополнительный `testLiveHTTPSInvitationOpensApp` открывает опубликованную страницу в Safari и проверяет переход в приложение. Для него передайте `MONOTASK_TEST_LIVE_INVITE=1` в окружение тестового процесса; без флага он пропускается, чтобы обычные UI-тесты не зависели от сети.
