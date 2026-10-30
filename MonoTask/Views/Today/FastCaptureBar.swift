@@ -72,7 +72,7 @@ struct FastCaptureBar: View {
                         .foregroundColor(Theme.Colors.textSecondary)
                         .frame(width: 36, height: 44)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(FullSurfaceButtonStyle())
                 .fixedSize()
                 .transition(.opacity)
                 .accessibilityLabel("Скрыть клавиатуру")

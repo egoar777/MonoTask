@@ -17,17 +17,17 @@ enum AppTab: String, CaseIterable, Identifiable {
 
     var systemImage: String {
         switch self {
-        case .today: return "checkmark.circle"
+        case .today: return "list.bullet.rectangle"
         case .activity: return "chart.bar"
-        case .settings: return "slider.horizontal.3"
+        case .settings: return "gearshape"
         }
     }
 
     var activeSystemImage: String {
         switch self {
-        case .today: return "checkmark.circle.fill"
+        case .today: return "list.bullet.rectangle.fill"
         case .activity: return "chart.bar.fill"
-        case .settings: return "slider.horizontal.3"
+        case .settings: return "gearshape"
         }
     }
 }

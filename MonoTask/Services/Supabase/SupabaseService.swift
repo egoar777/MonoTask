@@ -76,36 +76,4 @@ final class SupabaseService {
         client = SupabaseClient(supabaseURL: url, supabaseKey: key, options: options)
         connectionStatus = .connected
     }
-
-    func testConnection() async -> Bool {
-        if client == nil {
-            configureClient()
-        }
-        guard SupabaseConfig.shared.isConfigured,
-            let client = client,
-            AuthManager.shared.userID != nil,
-            (try? await client.auth.session) != nil
-        else {
-            connectionStatus = .notConfigured
-            return false
-        }
-
-        connectionStatus = .checking
-        do {
-            // Verify connection by attempting to select from monotask_tags
-            _ =
-                try await client
-                .from("monotask_tags")
-                .select()
-                .limit(1)
-                .execute()
-
-            connectionStatus = .connected
-            return true
-        } catch {
-            let errorMsg = error.localizedDescription
-            connectionStatus = .error(errorMsg)
-            return false
-        }
-    }
 }

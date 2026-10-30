@@ -5,13 +5,6 @@ extension Date {
         Calendar.current.startOfDay(for: self)
     }
 
-    var endOfDay: Date {
-        var components = DateComponents()
-        components.day = 1
-        components.second = -1
-        return Calendar.current.date(byAdding: components, to: startOfDay) ?? self
-    }
-
     var isToday: Bool {
         Calendar.current.isDateInToday(self)
     }
@@ -43,29 +36,10 @@ extension Date {
         Calendar.current.date(byAdding: .day, value: -days, to: self) ?? self
     }
 
-    func daysFromNow(_ days: Int) -> Date {
-        Calendar.current.date(byAdding: .day, value: days, to: self) ?? self
-    }
-
-    var formattedShortDate: String {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .short
-        formatter.timeStyle = .none
-        return formatter.string(from: self)
-    }
-
     var formattedMediumDate: String {
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
         formatter.timeStyle = .none
-        return formatter.string(from: self)
-    }
-
-    var formattedDateTime: String {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "ru_RU")
-        formatter.dateStyle = .short
-        formatter.timeStyle = .short
         return formatter.string(from: self)
     }
 
@@ -93,5 +67,15 @@ extension Date {
         } else {
             return formattedMediumDate
         }
+    }
+}
+
+// Compact list metadata; full dates remain available in the task editor.
+extension Date {
+    var taskReminderLabel: String {
+        let time = formatted(.dateTime.hour().minute().locale(Locale(identifier: "ru_RU")))
+        if Calendar.current.isDateInToday(self) { return "Сегодня, " + time }
+        if Calendar.current.isDateInTomorrow(self) { return "Завтра, " + time }
+        return formatted(.dateTime.day().month(.abbreviated).hour().minute().locale(Locale(identifier: "ru_RU")))
     }
 }

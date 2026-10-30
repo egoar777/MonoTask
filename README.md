@@ -25,16 +25,16 @@
 ### iPhone
 
 <p>
-<img src="docs/screenshots/ios-today.png" width="30%" alt="Задачи MonoTask 2.0" />
-<img src="docs/screenshots/ios-analytics.png" width="30%" alt="Аналитика MonoTask 2.0" />
-<img src="docs/screenshots/ios-settings.png" width="30%" alt="Настройки MonoTask 2.0" />
+<img src="docs/screenshots/ios-today.png" width="30%" alt="Задачи MonoTask 2.1.1" />
+<img src="docs/screenshots/ios-analytics.png" width="30%" alt="Аналитика MonoTask 2.1.1" />
+<img src="docs/screenshots/ios-settings.png" width="30%" alt="Настройки MonoTask 2.1.1" />
 </p>
 
 Скриншоты из симулятора iPhone с демонстрационными данными. Нажмите на изображение, чтобы открыть в полном размере.
 
 ### Mac
 
-**Задачи и фокус дня, версия 2.0** — боковое меню, категории и быстрый ввод с клавиатуры.
+**Задачи и фокус дня, версия 2.1.1** — боковое меню, категории и быстрый ввод с клавиатуры.
 
 [![MonoTask на Mac — задачи и фокус дня](docs/screenshots/mac-today.jpg)](docs/screenshots/mac-today.jpg)
 
@@ -44,9 +44,9 @@
 
 **Настройки** — аккаунт, расписание, уведомления и вид списка.
 
-[![MonoTask 2.0 на Mac — настройки](docs/screenshots/mac-settings.jpg)](docs/screenshots/mac-settings.jpg)
+[![MonoTask 2.1.1 на Mac — настройки](docs/screenshots/mac-settings.jpg)](docs/screenshots/mac-settings.jpg)
 
-Все снимки Mac-версии сделаны в версии 2.0 с демонстрационными данными.
+Все снимки Mac-версии сделаны в версии 2.1.1 с демонстрационными данными.
 
 ## Версия 2.1
 
@@ -113,4 +113,4 @@ xcodegen generate
 
 ## Шрифты
 
-В приложении используются Unbounded и JetBrains Mono. Оба распространяются по SIL Open Font License; тексты лицензий находятся в `MonoTask/Resources/Fonts`.
+Для заголовков используется Unbounded Black, для остального интерфейса — системный шрифт. Unbounded распространяется по SIL Open Font License; текст лицензии находится в `MonoTask/Resources/Fonts`.

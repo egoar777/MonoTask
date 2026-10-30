@@ -36,7 +36,7 @@ struct UndoDeletionToast: View {
                             .background(Theme.Colors.accent.opacity(0.12))
                             .clipShape(Capsule())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(FullSurfaceButtonStyle())
                     .accessibilityLabel("Отменить удаление")
                 }
                 .padding(.leading, 16)

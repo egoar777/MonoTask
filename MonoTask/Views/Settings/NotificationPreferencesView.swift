@@ -92,7 +92,7 @@ struct NotificationPreferencesView: View {
                                             )
                                             .clipShape(RoundedRectangle(cornerRadius: 7))
                                     }
-                                    .buttonStyle(.plain)
+                                    .buttonStyle(FullSurfaceButtonStyle())
                                     .accessibilityLabel(day.fullName)
                                     .accessibilityValue(selected ? "Включён" : "Выключен")
                                 }

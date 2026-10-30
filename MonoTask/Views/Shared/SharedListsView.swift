@@ -17,7 +17,7 @@ struct SharedListsView: View {
         NavigationStack(path: $path) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
-                    ScreenHeading(text: "ОБЩИЕ")
+                    ScreenHeading(text: "Общие списки")
                     Text("Списки для совместной работы. Личные задачи видны только вам.")
                         .font(Theme.Typography.callout).foregroundStyle(Theme.Colors.textSecondary)
                     if store.accountID == nil {
@@ -26,25 +26,6 @@ struct SharedListsView: View {
                             description: Text("Совместные списки доступны после входа в MonoTask."))
                     } else {
                         status
-                        GroupCard {
-                            Button {
-                                creating = true
-                            } label: {
-                                Label("Новый список", systemImage: "plus").frame(
-                                    maxWidth: .infinity, minHeight: 52, alignment: .leading
-                                ).padding(.horizontal, 18)
-                            }
-                            .accessibilityIdentifier("shared-create-list")
-                            Hairline(leading: 18)
-                            Button {
-                                joining = true
-                            } label: {
-                                Label("Присоединиться по приглашению", systemImage: "link").frame(
-                                    maxWidth: .infinity, minHeight: 52, alignment: .leading
-                                ).padding(.horizontal, 18)
-                            }
-                            .accessibilityIdentifier("shared-join-list")
-                        }.buttonStyle(.plain).disabled(!store.canManage)
                         if store.lists.isEmpty && !store.isSyncing {
                             ContentUnavailableView(
                                 "Пока нет общих списков", systemImage: "person.2",
@@ -54,7 +35,10 @@ struct SharedListsView: View {
                             NavigationLink(value: list.id) {
                                 GroupCard(padding: 18) {
                                     HStack {
-                                        Image(systemName: "person.2").foregroundStyle(Theme.Colors.accent)
+                                        Image(systemName: "folder").font(.title2).foregroundStyle(
+                                            Theme.Colors.tagColor(Theme.Colors.tagColors[0])
+                                        )
+                                        .frame(width: 36, height: 36)
                                         VStack(alignment: .leading, spacing: 6) {
                                             Text(list.title).font(Theme.Typography.body)
                                             Text(
@@ -66,7 +50,20 @@ struct SharedListsView: View {
                                         Image(systemName: "chevron.right").foregroundStyle(Theme.Colors.textMuted)
                                     }
                                 }
-                            }.buttonStyle(.plain).accessibilityIdentifier("shared-list-\(list.id)")
+                            }.buttonStyle(FullSurfaceButtonStyle()).accessibilityIdentifier("shared-list-\(list.id)")
+                        }
+                        GroupCard {
+                            Button {
+                                joining = true
+                            } label: {
+                                Label("Присоединиться по приглашению", systemImage: "link")
+                                    .font(Theme.Typography.callout)
+                                    .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
+                                    .padding(.horizontal, 18)
+                            }
+                            .buttonStyle(FullSurfaceButtonStyle())
+                            .disabled(!store.canManage)
+                            .accessibilityIdentifier("shared-join-list")
                         }
                     }
                 }.padding(.horizontal, 20).padding(.bottom, 24).frame(maxWidth: 760).frame(maxWidth: .infinity)
@@ -75,6 +72,15 @@ struct SharedListsView: View {
             .refreshable { await store.sync() }
             .navigationDestination(for: UUID.self) { id in SharedListDetailView(listID: id) }
             .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        creating = true
+                    } label: {
+                        Label("Новый список", systemImage: "plus")
+                    }
+                    .disabled(!store.canManage)
+                    .accessibilityIdentifier("shared-create-list")
+                }
                 if !isEmbedded { ToolbarItem(placement: .cancellationAction) { Button("Закрыть") { dismiss() } } }
             }
             .alert("Новый список", isPresented: $creating) {
@@ -123,6 +129,7 @@ struct SharedListsView: View {
     private var joinSheet: some View {
         NavigationStack {
             Form {
+                Section { CurrentDateLabel() }
                 Section("Приглашение") {
                     TextField("Код или ссылка MonoTask", text: $code).autocorrectionDisabled()
                         .accessibilityIdentifier("shared-invite-code")

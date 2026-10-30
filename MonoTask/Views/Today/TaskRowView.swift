@@ -15,6 +15,8 @@ struct TaskRowView: View {
     @AppStorage("monotask_show_task_notes") private var showNotes = true
     @AppStorage("monotask_compact_rows") private var compactRows = false
     @State private var completing = false
+    @State private var completionWave: CGFloat = 0
+    @State private var completionOpacity: Double = 1
     @State private var checkboxScale: CGFloat = 1.0
     @State private var lastToggleTime: Date = .distantPast
     @State private var settledSwipeOffset: CGFloat = 0
@@ -42,24 +44,27 @@ struct TaskRowView: View {
     }
 
     private var hasMeta: Bool {
-        primaryTag != nil || task.hasSubtasks || !task.notes.isEmpty || (task.dueDate != nil && !isDone)
+        (task.isHighPriorityToday && !isDone) || primaryTag != nil || task.hasSubtasks || !task.notes.isEmpty
+            || (task.dueDate != nil && !isDone)
     }
 
     var body: some View {
         ZStack(alignment: .trailing) {
-            deleteAction
-                .opacity(swipeOffset < -0.5 ? 1 : 0)
-                .allowsHitTesting(swipeOffset < -0.5)
-            taskRow
+            taskRowContent
                 .onGeometryChange(for: CGSize.self) {
                     $0.size
                 } action: { _, size in
                     rowSize = size
                 }
                 .offset(x: swipeOffset)
+            // Keep the revealed action above the translated row's compositing layer.
+            deleteAction
+                .opacity(swipeOffset < -0.5 ? 1 : 0)
+                .allowsHitTesting(swipeOffset < -0.5)
         }
         .frame(minHeight: 56)
-        .clipped()
+        .opacity(completionOpacity)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
         .task {
             #if DEBUG && targetEnvironment(simulator)
             if ProcessInfo.processInfo.arguments.contains("--screenshots"),
@@ -74,19 +79,31 @@ struct TaskRowView: View {
         #if os(iOS)
         .gesture(swipeGesture)
         #endif
+        .contentShape(.dragPreview, RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+        #if os(iOS)
+        .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+        #endif
+        .draggable(task.id.uuidString)
+        .contextMenu {
+            TaskContextMenu(task: task, allTags: allTags, onEdit: onEdit, onToggleDone: toggleDone)
+        }
     }
 
     #if os(iOS)
     private var swipeGesture: some UIGestureRecognizerRepresentable {
         HorizontalTaskSwipe(
             onChanged: { translation in
+                guard !completing, !isDeleting else { return }
                 let nextOffset = min(0, max(-rowSize.width, settledSwipeOffset + translation))
-                liveSwipeOffset = nextOffset
+                var transaction = Transaction()
+                transaction.disablesAnimations = true
+                withTransaction(transaction) { liveSwipeOffset = nextOffset }
                 let armed = shouldCompleteSwipe(translation: translation, offset: nextOffset)
                 if armed && !isFullSwipeArmed { Haptics.impact() }
                 isFullSwipeArmed = armed
             },
             onEnded: { translation in
+                guard !completing, !isDeleting else { return }
                 let finalOffset = min(0, max(-rowSize.width, settledSwipeOffset + translation))
                 if shouldCompleteSwipe(translation: translation, offset: finalOffset) {
                     withAnimation(.easeOut(duration: 0.2)) {
@@ -115,59 +132,77 @@ struct TaskRowView: View {
         )
     }
     private func shouldCompleteSwipe(translation: CGFloat, offset: CGFloat) -> Bool {
-        // Once the action is open, a second deliberate left swipe commits it.
-        // Moving right still closes the action, and a small wobble does not delete.
-        let secondSwipe = settledSwipeOffset <= -deleteButtonWidth && translation <= -44
-        return -offset >= fullSwipeThreshold || secondSwipe
+        // Once the action is open, a second deliberate left swipe confirms deletion.
+        let isActionOpen = settledSwipeOffset <= -deleteButtonWidth
+        let repeatedSwipeThreshold = max(44, deleteButtonWidth * 0.75)
+        return -offset >= fullSwipeThreshold
+            || (isActionOpen && translation <= -repeatedSwipeThreshold)
     }
     #endif
 
-    private var taskRow: some View {
+    private var taskRowContent: some View {
         HStack(alignment: .center, spacing: 4) {
 
             Button {
                 toggleDone()
             } label: {
-                TaskCheckbox(isDone: isDone || completing, isPriority: task.isHighPriorityToday)
+                TaskCheckbox(isDone: isDone || completing)
                     .scaleEffect(checkboxScale)
                     .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(FullSurfaceButtonStyle())
             .accessibilityLabel(isDone ? "Вернуть в работу" : "Отметить выполненной")
-            .padding(.leading, -11)
+            .padding(.leading, 2)
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(task.title)
-                    .font(Theme.Typography.body)
-                    .tracking(Theme.Typography.bodyTracking)
-                    .strikethrough(isDone || completing, color: Theme.Colors.textMuted)
-                    .foregroundColor(isDone ? Theme.Colors.textMuted : Theme.Colors.textPrimary)
-                    .lineLimit(2)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                HStack(alignment: .firstTextBaseline, spacing: 7) {
+                    Text(task.title)
+                        .font(Theme.Typography.body)
+                        .tracking(Theme.Typography.bodyTracking)
+                        .strikethrough(isDone || completing, color: Theme.Colors.textMuted)
+                        .foregroundColor(isDone ? Theme.Colors.textMuted : Theme.Colors.textPrimary)
+                        .lineLimit(2)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                }
 
                 if hasMeta {
                     metaRow
                 }
+                if showNotes && !task.notes.isEmpty {
+                    Text(task.notes).font(Theme.Typography.caption)
+                        .foregroundStyle(Theme.Colors.textSecondary).lineLimit(1)
+                }
             }
             .padding(.vertical, compactRows ? 8 : 12)
+            .padding(.trailing, 14)
             .contentShape(Rectangle())
             .onTapGesture {
                 onEdit(task)
             }
         }
         .frame(minHeight: 56)
-        .background(
-            Rectangle()
-                .fill(isTargeted ? Theme.Colors.fillStrong : Theme.Colors.background)
-        )
+        .background(isTargeted ? Theme.Colors.fillStrong : Theme.Colors.surface)
+        .overlay {
+            GeometryReader { geometry in
+                LinearGradient(
+                    stops: [
+                        .init(color: Theme.Colors.inverse, location: 0),
+                        .init(color: Theme.Colors.inverse, location: 0.78),
+                        .init(color: Theme.Colors.inverse.opacity(0), location: 1),
+                    ], startPoint: .leading, endPoint: .trailing
+                )
+                .frame(width: geometry.size.width * 1.3)
+                .offset(x: geometry.size.width * 1.3 * (completionWave - 1))
+                .opacity(completing ? 1 : 0)
+            }
+            .clipped()
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+        }
         .contentShape(Rectangle())
-        .draggable(task.id.uuidString) {
-            dragPreview
-        }
-        .contextMenu {
-            TaskContextMenu(task: task, allTags: allTags, onEdit: onEdit, onToggleDone: toggleDone)
-        }
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
     }
 
     private var deleteAction: some View {
@@ -176,7 +211,7 @@ struct TaskRowView: View {
                 Image(systemName: isFullSwipeArmed ? "trash.fill" : "trash")
                     .font(.system(size: 16, weight: .semibold))
                     .scaleEffect(isFullSwipeArmed ? 1.12 : 1)
-                Text("УДАЛИТЬ")
+                Text("Удалить")
                     .font(Theme.Typography.numeric(9, weight: .medium))
             }
             .foregroundColor(Theme.Colors.textPrimary)
@@ -186,7 +221,7 @@ struct TaskRowView: View {
             .clipped()
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(FullSurfaceButtonStyle())
         .accessibilityHidden(swipeOffset == 0)
     }
 
@@ -200,41 +235,31 @@ struct TaskRowView: View {
     }
 
     private var metaRow: some View {
-        HStack(spacing: 10) {
+        VStack(alignment: .leading, spacing: 5) {
             if let date = task.dueDate, !isDone {
-                Label(date.formattedDateTime, systemImage: "bell")
-                    .lineLimit(1)
+                Label(date.taskReminderLabel, systemImage: "calendar")
                     .font(Theme.Typography.caption)
-                    .foregroundColor(date > .now ? Theme.Colors.accent : Theme.Colors.textMuted)
+                    .foregroundStyle(date < .now ? Theme.Colors.warning : Theme.Colors.textSecondary)
             }
-            if let tag = primaryTag {
-                HStack(spacing: 5) {
-                    Circle()
-                        .fill(isDone ? Theme.Colors.textMuted : tag.color)
-                        .frame(width: 6, height: 6)
-                    Text(tag.name)
-                        .font(Theme.Typography.caption)
-                        .foregroundColor(Theme.Colors.textSecondary)
-                        .lineLimit(1)
+            HStack(spacing: 10) {
+                if task.isHighPriorityToday && !isDone {
+                    Image(systemName: "flag.fill").font(.caption).foregroundStyle(Theme.Colors.priority)
+                        .accessibilityLabel("Высокий приоритет")
+                }
+
+                if let tag = primaryTag {
+                    HStack(spacing: 5) {
+                        Circle().fill(isDone ? Theme.Colors.textMuted : tag.color).frame(width: 6, height: 6)
+                        Text(tag.name).lineLimit(1)
+                    }
+                }
+                if task.hasSubtasks {
+                    Label("\(task.completedSubtasksCount)/\(task.subtasksCount)", systemImage: "checklist")
+                        .foregroundStyle(allSubtasksDone && !isDone ? Theme.Colors.success : Theme.Colors.textSecondary)
                 }
             }
-
-            if task.hasSubtasks {
-                HStack(spacing: 4) {
-                    Image(systemName: allSubtasksDone ? "checkmark.circle.fill" : "circle.dashed")
-                        .font(.system(size: 11))
-                    Text("\(task.completedSubtasksCount)/\(task.subtasksCount)")
-                        .font(Theme.Typography.numeric(11))
-                }
-                .foregroundColor(allSubtasksDone && !isDone ? Theme.Colors.success : Theme.Colors.textMuted)
-            }
-
-            if showNotes && !task.notes.isEmpty {
-                Text(task.notes)
-                    .font(Theme.Typography.caption)
-                    .foregroundColor(Theme.Colors.textMuted)
-                    .lineLimit(1)
-            }
+            .font(Theme.Typography.caption)
+            .foregroundStyle(Theme.Colors.textSecondary)
         }
     }
 
@@ -245,49 +270,41 @@ struct TaskRowView: View {
         lastToggleTime = now
         let next = !task.isDone
         next ? Haptics.success() : Haptics.selection()
-        if reduceMotion || KeyboardObserver.shared.isKeyboardVisible || !next {
+        if reduceMotion || !next {
             withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.25)) {
                 modelContext.setCompleted(task, next)
             }
             return
         }
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) {
-            completing = true
+        completing = true
+        withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) {
             checkboxScale = 1.14
         }
+        withAnimation(.easeInOut(duration: 0.28)) {
+            completionWave = 1
+        }
         Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(180))
+            try? await Task.sleep(for: .milliseconds(290))
             guard task.modelContext != nil else { return }
-            withAnimation(.easeInOut(duration: 0.3)) {
+            withAnimation(.easeOut(duration: 0.12)) {
                 checkboxScale = 1
+                completionOpacity = 0
+            }
+            try? await Task.sleep(for: .milliseconds(120))
+            guard task.modelContext != nil else { return }
+            // Keep the row hidden until its removal transition has finished.
+            withAnimation(.easeInOut(duration: 0.25), completionCriteria: .removed) {
                 modelContext.setCompleted(task, true)
-                completing = false
+            } completion: {
+                var reset = Transaction()
+                reset.disablesAnimations = true
+                withTransaction(reset) {
+                    completing = false
+                    completionWave = 0
+                    completionOpacity = 1
+                }
             }
         }
-    }
-
-    // MARK: - Drag Preview
-
-    private var dragPreview: some View {
-        HStack(spacing: 8) {
-            if let tag = task.tags.first {
-                Circle()
-                    .fill(tag.color)
-                    .frame(width: 6, height: 6)
-            }
-            Text(task.title.isEmpty ? "Задача" : task.title)
-                .font(.system(size: 15, weight: .medium))
-                .foregroundColor(Theme.Colors.textPrimary)
-                .lineLimit(1)
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .background(Theme.Colors.surfaceElevated)
-        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: Theme.Radius.md, style: .continuous)
-                .stroke(Theme.Colors.hairline, lineWidth: 1)
-        )
     }
 }
 
@@ -321,7 +338,7 @@ struct TaskContextMenu: View {
         } label: {
             Label(
                 task.isHighPriorityToday ? "Снять приоритет" : "Высокий приоритет",
-                systemImage: task.isHighPriorityToday ? "flame.fill" : "flame"
+                systemImage: task.isHighPriorityToday ? "flag.fill" : "flag"
             )
         }
 

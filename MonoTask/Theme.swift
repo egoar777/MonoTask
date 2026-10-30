@@ -12,43 +12,35 @@ enum Theme {
     // MARK: - Colors
     enum Colors {
         // Surfaces, darkest to lightest
-        static let background = Color(hex: "#0B0B0A")
-        static let sidebar = Color(hex: "#111110")
-        static let surface = Color(hex: "#141412")
-        static let surfaceElevated = Color(hex: "#1B1B18")
-        static let surfaceInteractive = Color(hex: "#262622")
-        static let tabBarBackground = background
+        static let background = Color(hex: "#101110")
+        static let sidebar = Color(hex: "#171917")
+        static let surface = Color(hex: "#1C1E1B")
+        static let surfaceElevated = Color(hex: "#242623")
+        static let surfaceInteractive = Color(hex: "#30332E")
 
         // Translucent fills for chips and controls on any surface
         static let fill = Color.white.opacity(0.05)
         static let fillStrong = Color.white.opacity(0.09)
 
         // Rules
-        static let hairline = Color(hex: "#222220")
-        static let ruleStrong = Color(hex: "#3A3A35")
-        static let border = Color.white.opacity(0.12)
-        static let borderSubtle = Color.white.opacity(0.07)
+        static let hairline = Color(hex: "#2C2F29")
+        static let ruleStrong = Color(hex: "#494E45")
 
         // Text
         static let textPrimary = Color(hex: "#F2F2EC")
         static let textSecondary = Color(hex: "#A3A39A")
-        static let textMuted = Color(hex: "#6F6F66")
+        static let textMuted = Color(hex: "#93998E")
         static let textTertiary = textMuted
         static let accent = Color(hex: "#C8FF2E")
-        static let primary = accent
-        static let primaryMuted = accent.opacity(0.14)
-        static let onAccent = Color(hex: "#0B0B0A")
+        static let onAccent = Color(hex: "#101110")
         static let inverse = accent
         static let onInverse = onAccent
-        static let priority = Color(hex: "#FF48A4")
+        static let priority = Color(hex: "#FF9F43")
         static let info = textSecondary
 
         static let success = accent
-        static let accentGreen = accent
-        static let successMuted = accent.opacity(0.14)
 
         static let warning = Color(hex: "#FFB020")
-        static let warningMuted = warning.opacity(0.14)
 
         static let danger = Color(hex: "#FF4D4F")
         static let dangerMuted = danger.opacity(0.14)
@@ -110,120 +102,46 @@ enum Theme {
 
     // MARK: - Typography
     enum Typography {
-        private static let unboundedBlack = "Unbounded-Black"
-        private static let unboundedBold = "Unbounded-Bold"
-        private static let monoRegular = "JetBrainsMono-Regular"
-        private static let monoMedium = "JetBrainsMono-Medium"
-        private static let monoBold = "JetBrainsMono-Bold"
-        static let display = Font.custom(unboundedBlack, size: 34)
-        static let displayLarge = Font.custom(unboundedBlack, size: 40)
-        static let displayTracking: CGFloat = -0.5
-        static func heading(_ size: CGFloat) -> Font {
-            .custom(unboundedBold, size: size)
-        }
-        static func figure(_ size: CGFloat) -> Font {
-            .custom(unboundedBold, size: size)
-        }
-        static let editorTitle = Font.system(size: 24, weight: .bold)
-
-        static let title = Font.system(size: 20, weight: .semibold)
-        static let titleTracking: CGFloat = -0.5
-
-        static let body = Font.system(size: 16)
+        // Brand type is reserved for screen headers; controls and content use system styles.
+        static let display = Font.custom("Unbounded-Black", size: 24, relativeTo: .title2)
+        static let displayLarge = Font.custom("Unbounded-Black", size: 28, relativeTo: .title)
+        static let displayTracking: CGFloat = -0.6
+        static func heading(_ size: CGFloat) -> Font { .system(size: size, weight: .semibold) }
+        static func figure(_ size: CGFloat) -> Font { .system(size: size, weight: .semibold).monospacedDigit() }
+        static let editorTitle = Font.title2.weight(.semibold)
+        static let title = Font.title3.weight(.semibold)
+        static let body = Font.callout
         static let bodyTracking: CGFloat = -0.2
-
-        static let callout = Font.system(size: 14)
-        static let caption = Font.system(size: 12)
-        static let section = Font.custom(monoMedium, size: 11)
-        static let eyebrow = Font.custom(monoRegular, size: 11)
-        static let eyebrowTracking: CGFloat = 0.6
-        static let subtitle = Font.custom(monoRegular, size: 12)
+        static let callout = Font.subheadline
+        static let caption = Font.caption
+        static let section = Font.subheadline.weight(.semibold)
+        static let eyebrow = Font.subheadline
+        static let eyebrowTracking: CGFloat = 0
         static func numeric(_ size: CGFloat, weight: Font.Weight = .regular) -> Font {
-            switch weight {
-            case .bold, .heavy, .black, .semibold: return .custom(monoBold, size: size)
-            case .medium: return .custom(monoMedium, size: size)
-            default: return .custom(monoRegular, size: size)
-            }
+            .system(size: size, weight: weight).monospacedDigit()
         }
     }
 
     // MARK: - Spacing
     enum Spacing {
-        static let xs: CGFloat = 4
-        static let sm: CGFloat = 8
-        static let md: CGFloat = 12
         static let lg: CGFloat = 16
-        static let xl: CGFloat = 20
-        static let xxl: CGFloat = 24
-        static let xxxl: CGFloat = 32
         static let screenPadding: CGFloat = 20
-        static let touchTargetMin: CGFloat = 44
     }
 
     // MARK: - Corner Radius
     enum Radius {
-        static let xs: CGFloat = 4
         static let sm: CGFloat = 6
         static let md: CGFloat = 10
         static let lg: CGFloat = 14
         static let card: CGFloat = 16
-        static let xl: CGFloat = 18
         static let capturePill: CGFloat = 18
         static let sheet: CGFloat = 26
-        static let full: CGFloat = 9999
     }
-    typealias CornerRadius = Radius
 
     // MARK: - Animation
     enum Motion {
         static let standard = Animation.easeInOut(duration: 0.28)
         static let quick = Animation.easeInOut(duration: 0.18)
-    }
-
-    enum AnimationDuration {
-        static let quick: Double = 0.15
-        static let standard: Double = 0.25
-    }
-}
-
-// MARK: - View Modifiers
-
-struct MonoTaskCardModifier: ViewModifier {
-    var padding: CGFloat = Theme.Spacing.lg
-    var elevated: Bool = false
-    var cornerRadius: CGFloat = Theme.Radius.card
-
-    func body(content: Content) -> some View {
-        content
-            .padding(padding)
-            .background(elevated ? Theme.Colors.surfaceElevated : Theme.Colors.surface)
-            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .stroke(Theme.Colors.hairline, lineWidth: 1)
-            )
-    }
-}
-
-struct MonoTaskBackgroundModifier: ViewModifier {
-    func body(content: Content) -> some View {
-        content
-            .background(Theme.Colors.background.ignoresSafeArea())
-            .preferredColorScheme(Theme.colorScheme)
-    }
-}
-
-extension View {
-    func monoTaskCard(
-        padding: CGFloat = Theme.Spacing.lg,
-        elevated: Bool = false,
-        cornerRadius: CGFloat = Theme.Radius.card
-    ) -> some View {
-        modifier(MonoTaskCardModifier(padding: padding, elevated: elevated, cornerRadius: cornerRadius))
-    }
-
-    func monoTaskBackground() -> some View {
-        modifier(MonoTaskBackgroundModifier())
     }
 }
 

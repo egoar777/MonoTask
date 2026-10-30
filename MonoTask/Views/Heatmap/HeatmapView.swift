@@ -234,7 +234,7 @@ struct HeatmapView: View {
                         selectedDay = day
                     } label: {
                         RoundedRectangle(cornerRadius: 3).fill(activityColor(counts[day] ?? 0)).frame(height: 18)
-                    }.buttonStyle(.plain).accessibilityLabel(
+                    }.buttonStyle(FullSurfaceButtonStyle()).accessibilityLabel(
                         "\(day.formattedMediumDate): \(counts[day] ?? 0) выполнено")
                 }
             }.frame(width: 150)
@@ -253,7 +253,7 @@ struct HeatmapView: View {
                 .overlay(
                     RoundedRectangle(cornerRadius: 6).strokeBorder(
                         day.isToday ? Theme.Colors.textPrimary : .clear, lineWidth: 1))
-        }.buttonStyle(.plain).accessibilityLabel("\(day.formattedMediumDate): \(count) выполнено")
+        }.buttonStyle(FullSurfaceButtonStyle()).accessibilityLabel("\(day.formattedMediumDate): \(count) выполнено")
     }
     private func activityColor(_ count: Int) -> Color {
         count == 0 ? Theme.Colors.fillStrong : Theme.Colors.accent.opacity(min(1, 0.25 + Double(count) * 0.2))
@@ -276,7 +276,7 @@ struct HeatmapView: View {
                     Image(systemName: "chevron.down").font(.system(size: 11)).rotationEffect(
                         .degrees(expanded.contains(tag.id) ? 180 : 0))
                 }.frame(minHeight: 32).contentShape(Rectangle())
-            }.buttonStyle(.plain)
+            }.buttonStyle(FullSurfaceButtonStyle())
             ProgressLine(
                 progress: filtered.isEmpty ? 0 : Double(total) / Double(filtered.count), tint: tag.color, height: 5)
             if expanded.contains(tag.id) {

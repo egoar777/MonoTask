@@ -46,6 +46,25 @@ extension ModelContext {
         saveAndSync(delaySeconds: 0.4)
     }
 
+    /// Promotes a dropped open task and places it first in the priority section.
+    @MainActor
+    @discardableResult
+    func prioritizeTask(_ id: UUID, in ordered: [TaskItem]) -> Bool {
+        guard let task = ordered.first(where: { $0.id == id }),
+            !task.isDone, !TaskDeletionManager.shared.isPending(task)
+        else { return false }
+
+        task.isHighPriorityToday = true
+        task.touch()
+        let updated = [task] + ordered.filter { $0.id != id }
+        for (index, item) in updated.enumerated() where item.sortOrder != index {
+            item.sortOrder = index
+            item.touch()
+        }
+        saveAndSync(delaySeconds: 0.4)
+        return true
+    }
+
     /// Moves a task to a single context (or removes its context when `tag` is nil).
     @MainActor
     func assign(_ task: TaskItem, to tag: Tag?) {

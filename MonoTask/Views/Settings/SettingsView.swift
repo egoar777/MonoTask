@@ -38,7 +38,7 @@ struct SettingsView: View {
                                 .font(Theme.Typography.body)
                                 .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
                                 .padding(.horizontal, 18)
-                        }.buttonStyle(.plain).accessibilityIdentifier("settings-shared-lists")
+                        }.buttonStyle(FullSurfaceButtonStyle()).accessibilityIdentifier("settings-shared-lists")
                     }
                     schedulePreview
                     VStack(alignment: .leading, spacing: 10) {
@@ -68,6 +68,7 @@ struct SettingsView: View {
             .navigationDestination(for: SettingsPage.self) { page in
                 ScrollView {
                     VStack(alignment: .leading, spacing: 20) {
+                        CurrentDateLabel()
                         switch page {
                         case .categories: categories
                         case .notifications: NotificationPreferencesView()
@@ -153,7 +154,7 @@ struct SettingsView: View {
             .padding(16)
             .frame(minHeight: 76)
             .contentShape(Rectangle())
-        }.buttonStyle(.plain)
+        }.buttonStyle(FullSurfaceButtonStyle())
             .animation(reduceMotion ? nil : Theme.Motion.quick, value: subtitle)
             .animation(reduceMotion ? nil : Theme.Motion.quick, value: badge)
     }
@@ -191,7 +192,7 @@ struct SettingsView: View {
             )
             .contentShape(RoundedRectangle(cornerRadius: Theme.Radius.card))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(FullSurfaceButtonStyle())
         .accessibilityIdentifier("settings-account")
         .animation(reduceMotion ? nil : Theme.Motion.quick, value: SyncPresentation.title)
     }
@@ -213,7 +214,7 @@ struct SettingsView: View {
                 }
                 .frame(minHeight: 44)
                 .contentShape(Rectangle())
-            }.buttonStyle(.plain)
+            }.buttonStyle(FullSurfaceButtonStyle())
 
             if tags.isEmpty {
                 Text("Добавьте категорию и выберите дни фокуса.")
@@ -225,7 +226,7 @@ struct SettingsView: View {
                     Label("Новая категория", systemImage: "plus")
                         .font(Theme.Typography.callout)
                         .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                }.buttonStyle(.plain).foregroundStyle(Theme.Colors.accent)
+                }.buttonStyle(FullSurfaceButtonStyle()).foregroundStyle(Theme.Colors.accent)
             } else {
                 Hairline().padding(.top, 14).padding(.bottom, 10)
                 HStack {
@@ -267,7 +268,7 @@ struct SettingsView: View {
                         .frame(minHeight: 44)
                         .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(FullSurfaceButtonStyle())
                     .accessibilityLabel("\(tag.name), \(scheduleText(tag))")
                     .accessibilityHint("Открыть расписание категории")
                     .accessibilityIdentifier("settings-preview-" + tag.id.uuidString)
@@ -277,7 +278,7 @@ struct SettingsView: View {
                         Text("Все категории · \(tags.count)")
                             .font(Theme.Typography.caption)
                             .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
-                    }.buttonStyle(.plain).foregroundStyle(Theme.Colors.accent)
+                    }.buttonStyle(FullSurfaceButtonStyle()).foregroundStyle(Theme.Colors.accent)
                 }
             }
         }
@@ -327,7 +328,8 @@ struct SettingsView: View {
                                 Theme.Colors.textSecondary)
                         }.padding(16).contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(FullSurfaceButtonStyle())
+                    .accessibilityIdentifier("settings-edit-category-\(tag.name)")
                     .draggable(tag.id.uuidString)
                     .dropDestination(for: String.self) { items, _ in
                         guard let raw = items.first, let from = UUID(uuidString: raw) else { return false }
@@ -341,7 +343,7 @@ struct SettingsView: View {
                 } label: {
                     Label("Новая категория", systemImage: "plus").frame(maxWidth: .infinity, alignment: .leading)
                         .padding(18)
-                }.buttonStyle(.plain).foregroundStyle(Theme.Colors.accent)
+                }.buttonStyle(FullSurfaceButtonStyle()).foregroundStyle(Theme.Colors.accent)
             }
         }
     }
@@ -429,7 +431,7 @@ struct SettingsView: View {
                         )
                         .contentShape(RoundedRectangle(cornerRadius: Theme.Radius.card))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(FullSurfaceButtonStyle())
                 .accessibilityIdentifier("settings-sign-out")
                 .disabled(auth.isBusy)
                 .padding(.top, 4)

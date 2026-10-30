@@ -6,7 +6,7 @@ import UIKit
 
 struct ContentView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Query private var allTasks: [TaskItem]
+    @ObservedObject private var keyboard = KeyboardObserver.shared
     @State private var sharedLists = SharedListStore.shared
     @State private var selectedTab: AppTab = .today
     @State private var isCaptureActive: Bool = false
@@ -15,14 +15,11 @@ struct ContentView: View {
     @Namespace private var glassMorph
     @Namespace private var navigationSelection
     @State private var isCapturePresented = false
+    @State private var captureControlsVisible = false
     @State private var captureTag: Tag?
 
     init(initialTab: AppTab = .today) {
         _selectedTab = State(initialValue: initialTab)
-    }
-
-    private var openTaskCount: Int {
-        allTasks.filter { !$0.isDone && !TaskDeletionManager.shared.isPending($0) }.count
     }
 
     var body: some View {
@@ -36,7 +33,8 @@ struct ContentView: View {
         ZStack(alignment: .bottom) {
             TodayView(
                 isCaptureActive: $isCaptureActive,
-                captureTag: $captureTag
+                captureTag: $captureTag,
+                captureBottomInset: isCapturePresented ? 128 : 88
             )
             .ignoresSafeArea(.container, edges: .bottom)
             .opacity(selectedTab == .today ? 1 : 0)
@@ -55,11 +53,11 @@ struct ContentView: View {
                     .transition(.opacity)
             }
 
-            UndoDeletionToast().padding(.bottom, 84)
-
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
             tabBar
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.Colors.background.ignoresSafeArea())
 
         .sheet(isPresented: $sharedLists.isPresented) { SharedListsView() }
@@ -80,7 +78,7 @@ struct ContentView: View {
     private var tabBar: some View {
         GeometryReader { geometry in
             GlassCluster {
-                ZStack(alignment: .trailing) {
+                ZStack(alignment: .bottomTrailing) {
                     if !isCapturePresented {
                         HStack(spacing: 12) {
                             HStack(spacing: 0) {
@@ -89,47 +87,99 @@ struct ContentView: View {
                             .padding(4)
                             .frame(width: max(0, geometry.size.width - 72))
                             .modifier(FloatingGlass(shape: Capsule(), id: "tabs", namespace: glassMorph))
-
-                            Button(action: beginCapture) {
-                                Image(systemName: "plus")
-                                    .font(.system(size: 25, weight: .medium))
-                                    .frame(width: 60, height: 60)
-                                    .contentShape(Circle())
-                            }
-                            .buttonStyle(.plain)
-                            .foregroundStyle(Theme.Colors.textPrimary)
-                            .modifier(FloatingGlass(shape: Capsule(), id: "capture", namespace: glassMorph))
-                            .accessibilityLabel("Новая задача")
-                            .accessibilityHint("Раскрывает строку ввода")
-                            .accessibilityIdentifier("navigation-add-task")
+                            Spacer().frame(width: 60)
                         }
                         .transition(.opacity)
-                    } else {
-                        FloatingTaskCapture(
-                            isPresented: $isCapturePresented,
-                            isFocused: $isCaptureActive,
-                            title: $captureDraft,
-                            highPriority: $capturePriority,
-                            activeTag: captureTag
-                        )
-                        .frame(width: geometry.size.width, height: 60)
-                        .modifier(FloatingGlass(shape: Capsule(), id: "capture", namespace: glassMorph))
-                        .transition(.opacity)
                     }
+
+                    // Animate the glass independently so its changing width never moves or clips the text.
+                    Color.clear
+                        .frame(
+                            width: isCapturePresented ? geometry.size.width : 60,
+                            height: isCapturePresented ? 100 : 60
+                        )
+                        .modifier(
+                            FloatingGlass(
+                                shape: RoundedRectangle(cornerRadius: 28, style: .continuous),
+                                id: "capture", namespace: glassMorph
+                            )
+                        )
+                        .allowsHitTesting(false)
+
                 }
+                .frame(width: geometry.size.width, height: geometry.size.height, alignment: .bottomTrailing)
+            }
+            .overlay(alignment: .bottomTrailing) {
+                ZStack(alignment: .bottomTrailing) {
+                    FloatingTaskCapture(
+                        isPresented: $isCapturePresented,
+                        isFocused: $isCaptureActive,
+                        title: $captureDraft,
+                        highPriority: $capturePriority,
+                        activeTag: $captureTag
+                    )
+                    .frame(width: geometry.size.width, height: 100)
+                    .animation(nil, value: isCapturePresented)
+                    .opacity(captureControlsVisible ? 1 : 0)
+                    .animation(nil, value: captureControlsVisible)
+                    .allowsHitTesting(captureControlsVisible)
+                    .accessibilityHidden(!captureControlsVisible)
+
+                    Button(action: beginCapture) {
+                        Image(systemName: "plus")
+                            .font(.system(size: 25, weight: .medium))
+                            .frame(width: 60, height: 60)
+                            .contentShape(Circle())
+                    }
+                    .buttonStyle(FullSurfaceButtonStyle())
+                    .foregroundStyle(Theme.Colors.accent)
+                    .opacity(isCapturePresented ? 0 : 1)
+                    .allowsHitTesting(!isCapturePresented)
+                    .accessibilityHidden(isCapturePresented)
+                    .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: isCapturePresented)
+                    .accessibilityLabel("Новая задача")
+                    .accessibilityHint("Раскрывает строку ввода")
+                    .accessibilityIdentifier("navigation-add-task")
+                }
+                .frame(width: geometry.size.width, height: 100, alignment: .bottomTrailing)
+
             }
         }
-        .frame(height: 60)
+        .frame(height: isCapturePresented ? 100 : 60)
+        .animation(
+            reduceMotion ? nil : .easeInOut(duration: isCapturePresented ? 0.22 : 0.18),
+            value: isCapturePresented
+        )
+        .overlay(alignment: .top) {
+            UndoDeletionToast()
+                .padding(.bottom, 10)
+                .alignmentGuide(.top) { $0[.bottom] }
+        }
         .padding(.horizontal, 16)
         .padding(.top, 8)
-        .padding(.bottom, 2)
+        .padding(.bottom, keyboard.isKeyboardVisible ? 5 : -10)
+        .onChange(of: isCapturePresented) { _, presented in
+            if !presented {
+                var transaction = Transaction(animation: nil)
+                transaction.disablesAnimations = true
+                withTransaction(transaction) { captureControlsVisible = false }
+            }
+        }
     }
 
     private func beginCapture() {
         Haptics.selection()
-        withAnimation(reduceMotion ? nil : .smooth(duration: 0.42)) {
+        withAnimation(
+            reduceMotion ? nil : .easeInOut(duration: 0.22), completionCriteria: .logicallyComplete
+        ) {
             selectedTab = .today
             isCapturePresented = true
+        } completion: {
+            // Reveal the field and every control together, after the glass reaches its final size.
+            guard isCapturePresented else { return }
+            var transaction = Transaction(animation: nil)
+            transaction.disablesAnimations = true
+            withTransaction(transaction) { captureControlsVisible = true }
         }
     }
 
@@ -146,34 +196,27 @@ struct ContentView: View {
             VStack(spacing: 4) {
                 ZStack(alignment: .topTrailing) {
                     Image(systemName: isSelected ? tab.activeSystemImage : tab.systemImage)
-                        .font(.system(size: 19, weight: isSelected ? .medium : .light))
+                        .font(.system(size: 19, weight: .medium))
                         .frame(width: 28, height: 24)
 
-                    if tab == .today && openTaskCount > 0 && !isSelected {
-                        Circle()
-                            .fill(Theme.Colors.priority)
-                            .frame(width: 6, height: 6)
-                            .offset(x: 2, y: -1)
-                    }
                 }
 
                 Text(tab.title)
-                    .font(.system(size: 10, weight: isSelected ? .semibold : .medium))
+                    .font(.system(size: 11, weight: isSelected ? .semibold : .medium))
             }
-            .foregroundColor(isSelected ? Theme.Colors.accent : Theme.Colors.textMuted)
+            .foregroundColor(isSelected ? Theme.Colors.accent : Theme.Colors.textSecondary)
             .frame(maxWidth: .infinity)
             .frame(minHeight: 52)
             .background {
                 if isSelected {
                     Capsule()
-                        .fill(Theme.Colors.accent.opacity(0.16))
-                        .overlay(Capsule().strokeBorder(.white.opacity(0.12), lineWidth: 0.5))
+                        .fill(Theme.Colors.fill)
                         .matchedGeometryEffect(id: "selection", in: navigationSelection)
                 }
             }
             .contentShape(Capsule())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(FullSurfaceButtonStyle())
         .accessibilityLabel(tab.title)
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
         .accessibilityIdentifier("navigation-\(tab.rawValue)")
@@ -192,42 +235,46 @@ private struct FloatingTaskCapture: View {
     @Binding var isFocused: Bool
     @Binding var title: String
     @Binding var highPriority: Bool
-    let activeTag: Tag?
+    @Binding var activeTag: Tag?
     @FocusState private var fieldFocused: Bool
 
     private var canSubmit: Bool { !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
     var body: some View {
-        ZStack {
+        VStack(spacing: 2) {
             HStack(spacing: 8) {
-                PriorityToggleButton(isOn: $highPriority, size: 36)
                 TextField("Новая задача", text: $title)
                     .font(Theme.Typography.body)
-                    .foregroundStyle(Theme.Colors.textPrimary)
                     .focused($fieldFocused)
                     .submitLabel(.done)
                     .onSubmit(submit)
-                SubmitCircleButton(isEnabled: canSubmit, size: 36, action: submit)
+                    .frame(minHeight: 44)
                 Button {
                     if fieldFocused {
                         fieldFocused = false
+                        isFocused = false
+                        hideKeyboard()
                     } else {
-                        withAnimation(reduceMotion ? nil : .smooth(duration: 0.42)) {
-                            isPresented = false
-                        }
+                        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) { isPresented = false }
                     }
                 } label: {
                     Image(systemName: fieldFocused ? "keyboard.chevron.compact.down" : "xmark")
-                        .font(.system(size: 17, weight: .medium))
-                        .frame(width: 44, height: 44)
-                        .contentShape(Circle())
+                        .font(.system(size: 16, weight: .medium)).frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(FullSurfaceButtonStyle())
                 .accessibilityLabel(fieldFocused ? "Скрыть клавиатуру" : "Закрыть ввод")
             }
-            .padding(.horizontal, 8)
-
+            HStack(spacing: 8) {
+                CaptureCategoryPicker(selection: $activeTag)
+                Spacer(minLength: 4)
+                PriorityToggleButton(isOn: $highPriority, size: 36)
+                SubmitCircleButton(isEnabled: canSubmit, size: 36, action: submit)
+                    .accessibilityLabel("Добавить задачу")
+            }
         }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 4)
         .foregroundStyle(Theme.Colors.textPrimary)
         .onChange(of: fieldFocused) { _, focused in isFocused = focused }
         .onChange(of: isFocused) { _, focused in

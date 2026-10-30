@@ -20,19 +20,13 @@ struct FocusHeroCard: View {
         scope == .focus ? "Сегодня" : scope.title(tags: tags)
     }
 
-    private var subtitle: String? {
-        guard scope == .focus else { return nil }
-        if scheduledTags.isEmpty { return nil }
-        return scheduledTags.map(\.name).joined(separator: " · ")
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
 
             HStack(spacing: 8) {
-                EyebrowLabel(text: today.formattedEyebrowDate)
+                CurrentDateLabel(date: today)
                 Spacer()
-                SyncIndicator()
+                SyncIndicator(compact: true)
             }
             .padding(.top, 8)
             .fixedSize(horizontal: false, vertical: true)
@@ -43,39 +37,28 @@ struct FocusHeroCard: View {
                 .tracking(Theme.Typography.displayTracking)
                 .foregroundColor(Theme.Colors.textPrimary)
                 .lineLimit(1)
-                .minimumScaleFactor(0.5)
+                .minimumScaleFactor(0.7)
                 .fixedSize(horizontal: false, vertical: true)
-                .scaleEffect(compact ? 22.0 / 34.0 : 1, anchor: .leading)
-                .frame(height: compact ? 29 : 43, alignment: .leading)
-                .padding(.top, compact ? 10 : 18)
+                .scaleEffect(compact ? 0.75 : 1, anchor: .leading)
+                .padding(.top, 8)
+                .accessibilityAddTraits(.isHeader)
 
             CollapsingSection(progress: compact ? 1 : 0) {
                 VStack(alignment: .leading, spacing: 0) {
 
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Text("\(doneCount)")
-                            .font(Theme.Typography.figure(46))
-                            .foregroundColor(Theme.Colors.accent)
+                    HStack {
+                        Text("Выполнено \(doneCount) из \(totalCount)")
+                            .font(Theme.Typography.caption)
+                            .foregroundStyle(Theme.Colors.textPrimary)
                             .contentTransition(.numericText())
                             .accessibilityIdentifier("focus-completion-count")
-                        Text("/ \(totalCount) ГОТОВО")
-                            .font(Theme.Typography.numeric(13))
-                            .foregroundColor(Theme.Colors.textMuted)
-
-                        if let subtitle {
-                            Spacer(minLength: 8)
-                            Text(subtitle.uppercased())
-                                .font(Theme.Typography.eyebrow)
-                                .tracking(Theme.Typography.eyebrowTracking)
-                                .foregroundColor(Theme.Colors.textSecondary)
-                                .lineLimit(1)
-                                .truncationMode(.tail)
-                        }
+                        Spacer()
+                        Text(progress, format: .percent.precision(.fractionLength(0)))
+                            .font(Theme.Typography.caption.monospacedDigit())
+                            .foregroundStyle(Theme.Colors.textSecondary)
                     }
-                    .padding(.top, 4)
-
-                    ProgressLine(progress: progress)
-                        .padding(.top, 14)
+                    .padding(.top, 16)
+                    ProgressLine(progress: progress).padding(.top, 8)
                 }
                 .fixedSize(horizontal: false, vertical: true)
             }
@@ -83,41 +66,66 @@ struct FocusHeroCard: View {
             .clipped()
             .accessibilityHidden(compact)
 
-            ScrollViewReader { proxy in
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 6) {
-                        pill(.focus, title: "Фокус", color: nil)
-                        pill(.all, title: "Все", color: nil)
-                        ForEach(tags) { tag in
-                            pill(.tag(tag.id), title: tag.name, color: tag.color)
-                        }
-                        Button {
-                            SharedListStore.shared.isPresented = true
-                        } label: {
-                            Label("Общие", systemImage: "person.2")
-                                .font(Theme.Typography.numeric(12))
-                                .padding(.horizontal, 14).frame(minHeight: 36)
-                                .foregroundStyle(Theme.Colors.textSecondary)
-                                .background(Theme.Colors.fill, in: Capsule())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityIdentifier("open-shared-lists")
-                    }
-                    .padding(.horizontal, Theme.Spacing.screenPadding)
-                    .padding(.vertical, 16)
+            HStack(spacing: 6) {
+                pill(.focus, title: "Фокус", color: nil)
+                scopeMenu
+                Button {
+                    SharedListStore.shared.isPresented = true
+                } label: {
+                    Label("Общие", systemImage: "person.2")
+                        .font(Theme.Typography.numeric(12))
+                        .padding(.horizontal, 14).frame(minHeight: 38)
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                        .background(Theme.Colors.surfaceElevated, in: Capsule())
+                        .frame(minHeight: 44)
                 }
-                .padding(.horizontal, -Theme.Spacing.screenPadding)
-                .onChange(of: scope) { _, newScope in
-                    withAnimation(reduceMotion ? nil : Theme.Motion.standard) {
-                        proxy.scrollTo(pillId(newScope), anchor: .center)
-                    }
-                }
+                .buttonStyle(FullSurfaceButtonStyle())
+                .accessibilityIdentifier("open-shared-lists")
             }
+            .padding(.top, 12).padding(.bottom, 8)
         }
         .padding(.horizontal, Theme.Spacing.screenPadding)
         .background(Theme.Colors.background)
         .animation(reduceMotion ? nil : Theme.Motion.standard, value: doneCount)
         .animation(reduceMotion ? nil : collapseAnimation, value: compact)
+    }
+
+    private var scopeMenu: some View {
+        Menu {
+            scopeOption(.all, title: "Все задачи", icon: "tray.full")
+            ForEach(tags) { tag in
+                scopeOption(.tag(tag.id), title: tag.name, icon: "tag")
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Text(scope == .focus ? "Задачи" : scope.title(tags: tags))
+                    .lineLimit(1).truncationMode(.tail)
+                Image(systemName: "chevron.down").font(.system(size: 10, weight: .semibold))
+            }
+            .font(.footnote.weight(.medium))
+            .foregroundStyle(scope == .focus ? Theme.Colors.textSecondary : Theme.Colors.onAccent)
+            .padding(.horizontal, 14)
+            .frame(maxWidth: .infinity, minHeight: 38)
+            .background(scope == .focus ? Theme.Colors.surfaceElevated : Theme.Colors.accent, in: Capsule())
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
+        }
+        .menuStyle(.borderlessButton)
+        .accessibilityLabel("Разделы задач")
+        .accessibilityValue(scope.title(tags: tags))
+        .accessibilityIdentifier("task-scope-menu")
+    }
+
+    private func scopeOption(_ option: TaskScope, title: String, icon: String) -> some View {
+        Button {
+            guard scope != option else { return }
+            Haptics.selection()
+            scope = option
+        } label: {
+            Label(title, systemImage: scope == option ? "checkmark" : icon)
+        }
+        .accessibilityIdentifier("task-scope-" + pillId(option))
+        .accessibilityValue("Открытых задач: \(openCount(option))")
     }
 
     private func pill(_ pillScope: TaskScope, title: String, color: Color?) -> some View {
@@ -129,7 +137,7 @@ struct FocusHeroCard: View {
         ) {
             guard scope != pillScope else { return }
             Haptics.selection()
-            withAnimation(reduceMotion ? nil : Theme.Motion.standard) { scope = pillScope }
+            scope = pillScope
         }
         .id(pillId(pillScope))
         .accessibilityIdentifier("task-scope-" + pillId(pillScope))
@@ -163,6 +171,7 @@ private struct CollapsingSection: Layout {
 }
 
 struct SyncIndicator: View {
+    var compact = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showingDetails = false
     var body: some View {
@@ -178,16 +187,23 @@ struct SyncIndicator: View {
                     }
                 }
                 .frame(width: 12, height: 12)
-                Text(SyncPresentation.title.uppercased())
-                    .contentTransition(.opacity)
-                    .font(Theme.Typography.eyebrow)
-                    .tracking(Theme.Typography.eyebrowTracking)
-                    .foregroundStyle(Theme.Colors.textMuted)
-                    .lineLimit(1)
+                if !compact {
+                    Text(SyncPresentation.title.uppercased())
+                        .contentTransition(.opacity)
+                        .font(Theme.Typography.eyebrow)
+                        .tracking(Theme.Typography.eyebrowTracking)
+                        .foregroundStyle(Theme.Colors.textMuted)
+                        .lineLimit(1)
+                } else {
+                    Image(systemName: SyncPresentation.icon)
+                        .font(.subheadline).foregroundStyle(SyncPresentation.color)
+                }
             }
         }
-        .buttonStyle(.plain)
+        .buttonStyle(FullSurfaceButtonStyle())
         .animation(reduceMotion ? nil : Theme.Motion.quick, value: SyncPresentation.title)
+        .frame(minHeight: 28)
+        .accessibilityLabel(SyncPresentation.title.uppercased())
         .accessibilityIdentifier("sync-status")
         .accessibilityHint("Показать подробности синхронизации")
         #if os(iOS)
@@ -266,7 +282,7 @@ struct SyncDetailsView: View {
                     } label: {
                         Image(systemName: "xmark").font(.system(size: 14, weight: .semibold))
                             .frame(width: 36, height: 36).background(Theme.Colors.fillStrong, in: Circle())
-                    }.buttonStyle(.plain).accessibilityLabel("Закрыть")
+                    }.buttonStyle(FullSurfaceButtonStyle()).accessibilityLabel("Закрыть")
                 }
             }
             Text(
@@ -308,7 +324,7 @@ struct SyncDetailsView: View {
                     .frame(maxWidth: .infinity, minHeight: 52)
                     .background(canSync ? Theme.Colors.accent : Theme.Colors.surfaceInteractive, in: Capsule())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(FullSurfaceButtonStyle())
             .disabled(!canSync)
         }
         .foregroundStyle(Theme.Colors.textPrimary)

@@ -14,6 +14,7 @@ struct AuthView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
+                CurrentDateLabel()
                 VStack(alignment: .leading, spacing: 14) {
                     EyebrowLabel(text: "Личное пространство")
                     Text("MONOTASK")
@@ -73,7 +74,7 @@ struct AuthView: View {
                         .foregroundColor(canSubmit || auth.isBusy ? Theme.Colors.onAccent : Theme.Colors.textSecondary)
                         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.lg, style: .continuous))
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(FullSurfaceButtonStyle())
                     .disabled(!canSubmit)
                 }
                 .disabled(auth.isBusy)
@@ -88,7 +89,7 @@ struct AuthView: View {
                         .frame(maxWidth: .infinity, minHeight: 44)
                         .multilineTextAlignment(.center)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(FullSurfaceButtonStyle())
                 .disabled(auth.isBusy)
             }
             .frame(maxWidth: 420)

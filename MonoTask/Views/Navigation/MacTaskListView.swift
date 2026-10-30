@@ -12,6 +12,8 @@ struct MacTaskListView: View {
     let scope: TaskScope
     let today: Date
 
+    @State private var captureTag: Tag?
+    @State private var hasCategoryOverride = false
     @State private var taskTitle: String = ""
     @State private var isHighPriority: Bool = false
     @State private var taskToEdit: TaskItem? = nil
@@ -64,7 +66,7 @@ struct MacTaskListView: View {
                 header
                 captureBar
 
-                if !highPriorityTasks.isEmpty {
+                if !highPriorityTasks.isEmpty || !regularTasks.isEmpty {
                     section(
                         title: "Приоритет", tasks: highPriorityTasks, color: Theme.Colors.priority, highPriority: true)
                 }
@@ -126,7 +128,7 @@ struct MacTaskListView: View {
                     Button {
                         showingClearCompleted = true
                     } label: {
-                        Text("ОЧИСТИТЬ ВЫПОЛНЕННЫЕ")
+                        Text("Очистить выполненные")
                             .font(Theme.Typography.numeric(10, weight: .medium))
                             .tracking(0.6)
                             .foregroundColor(Theme.Colors.textSecondary)
@@ -134,7 +136,7 @@ struct MacTaskListView: View {
                             .frame(height: 24)
                             .overlay(Capsule().strokeBorder(Theme.Colors.ruleStrong, lineWidth: 1))
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(FullSurfaceButtonStyle())
                 }
             }
 
@@ -153,27 +155,16 @@ struct MacTaskListView: View {
             }
             .padding(.top, 16)
 
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text("\(completedTasks.count)")
-                    .font(Theme.Typography.figure(40))
-                    .foregroundColor(Theme.Colors.accent)
+            HStack {
+                Text("Выполнено \(completedTasks.count) из \(filteredTasks.count)")
                     .contentTransition(.numericText())
-                Text("/ \(filteredTasks.count) ГОТОВО")
-                    .font(Theme.Typography.numeric(13))
-                    .foregroundColor(Theme.Colors.textMuted)
-                if let headerSubtitle {
-                    Spacer()
-                    Text(headerSubtitle.uppercased())
-                        .font(Theme.Typography.eyebrow)
-                        .tracking(Theme.Typography.eyebrowTracking)
-                        .foregroundColor(Theme.Colors.textSecondary)
-                        .lineLimit(1)
-                }
+                Spacer()
+                Text(progress, format: .percent.precision(.fractionLength(0)))
             }
-            .padding(.top, 4)
-
-            ProgressLine(progress: progress)
-                .padding(.top, 14)
+            .font(Theme.Typography.caption)
+            .foregroundStyle(Theme.Colors.textSecondary)
+            .padding(.top, 16)
+            ProgressLine(progress: progress).padding(.top, 8)
         }
     }
 
@@ -212,20 +203,15 @@ struct MacTaskListView: View {
                 handleCreateTask()
             }
 
-            if let activeTag {
-                HStack(spacing: 5) {
-                    Circle()
-                        .fill(activeTag.color)
-                        .frame(width: 6, height: 6)
-                    Text(activeTag.name)
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(Theme.Colors.textSecondary)
-                }
-                .padding(.horizontal, 8)
-                .frame(height: 22)
-                .background(Theme.Colors.fill)
-                .clipShape(Capsule())
-            }
+            CaptureCategoryPicker(
+                selection: Binding(
+                    get: { hasCategoryOverride ? captureTag : activeTag },
+                    set: {
+                        captureTag = $0; hasCategoryOverride = true
+                    }
+                )
+            )
+            .onChange(of: scope) { _, _ in hasCategoryOverride = false }
 
             SubmitCircleButton(isEnabled: canSubmit, size: 26) {
                 handleCreateTask()
@@ -246,15 +232,22 @@ struct MacTaskListView: View {
     // MARK: - Sections
 
     private func section(title: String, tasks: [TaskItem], color: Color, highPriority: Bool?) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            SectionTitle(text: title, count: tasks.count, color: color)
+        VStack(alignment: .leading, spacing: 8) {
+            if highPriority == true {
+                PrioritySectionTitle(count: tasks.count, color: color) { id in
+                    withAnimation(reduceMotion ? nil : Theme.Motion.standard) {
+                        modelContext.prioritizeTask(
+                            id, in: allTasks.filter { !TaskDeletionManager.shared.isPending($0) })
+                    }
+                }
                 .padding(.bottom, 6)
-
-            Hairline()
+            } else {
+                SectionTitle(text: title, count: tasks.count, color: color)
+                    .padding(.bottom, 6)
+            }
 
             ForEach(tasks) { task in
                 row(task, highPriority: highPriority)
-                Hairline()
             }
         }
     }
@@ -275,14 +268,12 @@ struct MacTaskListView: View {
                 }
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(FullSurfaceButtonStyle())
             .padding(.bottom, 6)
 
             if showCompleted {
-                Hairline()
                 ForEach(completedTasks) { task in
                     row(task, highPriority: nil)
-                    Hairline()
                 }
             }
         }
@@ -292,7 +283,7 @@ struct MacTaskListView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Нет открытых задач")
                 .font(Theme.Typography.heading(24))
-                .textCase(.uppercase)
+
                 .foregroundColor(Theme.Colors.textPrimary)
             Text(
                 completedTasks.isEmpty
@@ -341,7 +332,7 @@ struct MacTaskListView: View {
     private func handleCreateTask() {
         let created = modelContext.createTask(
             title: taskTitle,
-            tag: activeTag,
+            tag: hasCategoryOverride ? captureTag : activeTag,
             highPriority: isHighPriority || scope == .highPriority
         )
         guard created != nil else { return }
@@ -389,12 +380,12 @@ struct MacTaskRowItem: View {
                     }
                 }
             } label: {
-                TaskCheckbox(isDone: task.isDone || completing, isPriority: task.isHighPriorityToday, size: 19)
+                TaskCheckbox(isDone: task.isDone || completing, size: 19)
                     .scaleEffect(completing ? 1.14 : 1)
                     .frame(width: 30, height: 30)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(FullSurfaceButtonStyle())
             .help(task.isDone ? "Вернуть в работу" : "Отметить выполненной")
 
             Button {
@@ -410,6 +401,11 @@ struct MacTaskRowItem: View {
 
                     Spacer(minLength: 12)
 
+                    if let date = task.dueDate, !task.isDone {
+                        Label(date.taskReminderLabel, systemImage: "calendar")
+                            .font(Theme.Typography.caption)
+                            .foregroundStyle(date < .now ? Theme.Colors.warning : Theme.Colors.textSecondary)
+                    }
                     if showNotes && !task.notes.isEmpty {
                         Image(systemName: "text.alignleft")
                             .font(.system(size: 10))
@@ -423,6 +419,9 @@ struct MacTaskRowItem: View {
                             .foregroundColor(allDone && !task.isDone ? Theme.Colors.accent : Theme.Colors.textMuted)
                     }
 
+                    if task.isHighPriorityToday && !task.isDone {
+                        Image(systemName: "flag.fill").font(.caption).foregroundStyle(Theme.Colors.priority)
+                    }
                     if showsTag, let tag = task.tags.first {
                         HStack(spacing: 5) {
                             Circle()
@@ -437,13 +436,16 @@ struct MacTaskRowItem: View {
                 }
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(FullSurfaceButtonStyle())
         }
-        .padding(.vertical, compactRows ? 3 : 6)
+        .padding(.vertical, compactRows ? 6 : 10)
+        .padding(.horizontal, 10)
         .background(
-            Rectangle()
-                .fill(isTargeted ? Theme.Colors.fillStrong : (isHovered ? Theme.Colors.fill : Color.clear))
-                .padding(.horizontal, -10)
+            RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
+                .fill(
+                    isTargeted
+                        ? Theme.Colors.surfaceInteractive
+                        : (isHovered ? Theme.Colors.surfaceElevated : Theme.Colors.surface))
         )
         .onHover { isHovered = $0 }
         .draggable(task.id.uuidString) {

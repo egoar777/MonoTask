@@ -24,12 +24,16 @@ struct TagEditSheet: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            CurrentDateLabel()
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, Theme.Spacing.screenPadding)
+                .padding(.top, 16)
 
             HStack {
                 Button("Отмена") {
                     dismiss()
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(FullSurfaceButtonStyle())
                 .font(Theme.Typography.callout)
                 .foregroundColor(Theme.Colors.textSecondary)
                 .keyboardShortcut(.cancelAction)
@@ -52,7 +56,7 @@ struct TagEditSheet: View {
                         .background(canSave ? Theme.Colors.inverse : Theme.Colors.fillStrong)
                         .clipShape(Capsule())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(FullSurfaceButtonStyle())
                 .disabled(!canSave)
                 .keyboardShortcut(.defaultAction)
             }
@@ -93,7 +97,7 @@ struct TagEditSheet: View {
                                         )
                                         .contentShape(Circle())
                                 }
-                                .buttonStyle(.plain)
+                                .buttonStyle(FullSurfaceButtonStyle())
                             }
                         }
                     }
@@ -123,7 +127,7 @@ struct TagEditSheet: View {
                                         )
                                         .contentShape(Rectangle())
                                 }
-                                .buttonStyle(.plain)
+                                .buttonStyle(FullSurfaceButtonStyle())
                             }
                         }
                         Text("В эти дни задачи категории попадают в «Фокус дня».")

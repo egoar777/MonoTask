@@ -11,7 +11,9 @@ struct TodayView: View {
     @ObservedObject private var keyboard = KeyboardObserver.shared
     @Binding var captureTag: Tag?
     @Binding var isCaptureActive: Bool
+    var captureBottomInset: CGFloat = 88
 
+    @State private var isHeaderCollapsedByScroll = false
     @State private var scope: TaskScope = .focus
     @State private var taskToEdit: TaskItem?
     @State private var showCompleted: Bool = false
@@ -21,10 +23,12 @@ struct TodayView: View {
     @State private var today: Date = Date.now.startOfDay
 
     init(
-        isCaptureActive: Binding<Bool> = .constant(false), captureTag: Binding<Tag?> = .constant(nil)
+        isCaptureActive: Binding<Bool> = .constant(false), captureTag: Binding<Tag?> = .constant(nil),
+        captureBottomInset: CGFloat = 88
     ) {
         self._isCaptureActive = isCaptureActive
         self._captureTag = captureTag
+        self.captureBottomInset = captureBottomInset
     }
 
     private var scheduledTags: [Tag] {
@@ -61,8 +65,9 @@ struct TodayView: View {
         KeyboardAnchoredLayout {
             VStack(spacing: 0) {
                 FocusHeroCard(
-                    compact: keyboard.isKeyboardVisible,
-                    collapseAnimation: keyboard.transitionAnimation,
+                    compact: keyboard.isKeyboardVisible || isHeaderCollapsedByScroll,
+                    collapseAnimation: keyboard.isKeyboardVisible
+                        ? keyboard.transitionAnimation : Theme.Motion.standard,
                     tags: tags,
                     scheduledTags: scheduledTags,
                     scope: $scope,
@@ -82,13 +87,13 @@ struct TodayView: View {
                             Color.clear
                                 .frame(height: 1)
                                 .id("top_anchor")
-                                .padding(.bottom, 12)
+                                .padding(.bottom, 0)
 
-                            if !highPriorityTasks.isEmpty {
+                            if !highPriorityTasks.isEmpty || !regularTasks.isEmpty {
                                 taskSection(
                                     title: "Приоритет",
                                     tasks: highPriorityTasks,
-                                    labelColor: Theme.Colors.priority,
+                                    labelColor: Theme.Colors.textPrimary,
                                     makeHighPriority: true
                                 )
                             }
@@ -97,7 +102,7 @@ struct TodayView: View {
                                 taskSection(
                                     title: "Задачи",
                                     tasks: regularTasks,
-                                    labelColor: Theme.Colors.textMuted,
+                                    labelColor: Theme.Colors.textPrimary,
                                     makeHighPriority: false
                                 )
                             } else if highPriorityTasks.isEmpty {
@@ -125,10 +130,20 @@ struct TodayView: View {
                             Haptics.warning()
                         }
                     }
+                    .onScrollGeometryChange(for: CGFloat.self) { geometry in
+                        max(0, geometry.contentOffset.y + geometry.contentInsets.top)
+                    } action: { _, offset in
+                        // Keep separate thresholds so the header's height change cannot toggle it back.
+                        if offset > 64 {
+                            isHeaderCollapsedByScroll = true
+                        } else if offset < 8 {
+                            isHeaderCollapsedByScroll = false
+                        }
+                    }
                     .scrollBounceBehavior(.always, axes: .vertical)
                     .scrollDismissesKeyboard(.interactively)
                     #if os(iOS)
-                    .contentMargins(.bottom, isCaptureActive ? 0 : 88, for: .scrollContent)
+                    .contentMargins(.bottom, captureBottomInset, for: .scrollContent)
                     #endif
                     .monoScrollEdge()
                     .onChange(of: scope) { _, _ in
@@ -196,11 +211,19 @@ struct TodayView: View {
     // MARK: - Sections
 
     private func taskSection(title: String, tasks: [TaskItem], labelColor: Color, makeHighPriority: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            SectionTitle(text: title, count: tasks.count, color: labelColor)
+        VStack(alignment: .leading, spacing: 8) {
+            if makeHighPriority {
+                PrioritySectionTitle(count: tasks.count, color: labelColor) { id in
+                    withAnimation(reduceMotion ? nil : Theme.Motion.standard) {
+                        modelContext.prioritizeTask(
+                            id, in: allTasks.filter { !TaskDeletionManager.shared.isPending($0) })
+                    }
+                }
                 .padding(.bottom, 6)
-
-            Hairline()
+            } else {
+                SectionTitle(text: title, count: tasks.count, color: labelColor)
+                    .padding(.bottom, 6)
+            }
 
             ForEach(tasks) { task in
                 TaskRowView(
@@ -230,13 +253,12 @@ struct TodayView: View {
                     }
                 }
 
-                Hairline()
             }
         }
     }
 
     private var completedSection: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline) {
                 Button {
                     Haptics.selection()
@@ -251,10 +273,10 @@ struct TodayView: View {
                             .rotationEffect(.degrees(showCompleted ? 0 : -90))
                             .foregroundColor(Theme.Colors.textMuted)
                     }
-                    .frame(minHeight: 32)
+                    .frame(minHeight: 44)
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(FullSurfaceButtonStyle())
 
                 Spacer()
 
@@ -262,29 +284,27 @@ struct TodayView: View {
                     Haptics.selection()
                     showingClearCompleted = true
                 } label: {
-                    Text("ОЧИСТИТЬ")
-                        .font(Theme.Typography.numeric(10, weight: .medium))
+                    Text("Очистить")
+                        .font(Theme.Typography.caption)
                         .tracking(0.6)
                         .foregroundColor(Theme.Colors.textSecondary)
                         .padding(.horizontal, 10)
                         .frame(height: 24)
                         .overlay(Capsule().strokeBorder(Theme.Colors.ruleStrong, lineWidth: 1))
-                        .frame(minHeight: 32)
+                        .frame(minHeight: 44)
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(FullSurfaceButtonStyle())
             }
             .padding(.bottom, 6)
 
             if showCompleted {
-                Hairline()
                 ForEach(completedTasks) { task in
                     TaskRowView(
                         task: task,
                         allTags: tags,
                         onEdit: { taskToEdit = $0 }
                     )
-                    Hairline()
                 }
             }
         }
@@ -294,12 +314,11 @@ struct TodayView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Нет открытых задач")
                 .font(Theme.Typography.heading(26))
-                .textCase(.uppercase)
                 .foregroundColor(Theme.Colors.textPrimary)
 
             Text(
                 completedTasks.isEmpty
-                    ? "В этом списке нет задач. Добавьте первую через строку внизу."
+                    ? "В этом списке нет задач. Нажмите «+», чтобы добавить первую."
                     : "Открытых задач в этом списке не осталось."
             )
             .font(Theme.Typography.callout)

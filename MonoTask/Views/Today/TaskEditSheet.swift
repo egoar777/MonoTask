@@ -82,6 +82,7 @@ struct TaskEditSheet: View {
     private var header: some View {
         HStack(alignment: .center) {
             VStack(alignment: .leading, spacing: 3) {
+                CurrentDateLabel()
                 EyebrowLabel(text: task.isDone ? "Задача · выполнена" : "Задача")
                 Text("Создана \(task.createdAt.formattedRelative.lowercased())")
                     .font(Theme.Typography.caption)
@@ -101,7 +102,7 @@ struct TaskEditSheet: View {
                     .background(Theme.Colors.inverse)
                     .clipShape(Capsule())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(FullSurfaceButtonStyle())
             .keyboardShortcut(.cancelAction)
         }
         .padding(.horizontal, Theme.Spacing.screenPadding)
@@ -135,7 +136,7 @@ struct TaskEditSheet: View {
         GroupCard {
 
             HStack(spacing: 12) {
-                Image(systemName: isHighPriorityToday ? "flame.fill" : "flame")
+                Image(systemName: isHighPriorityToday ? "flag.fill" : "flag")
                     .font(.system(size: 15))
                     .foregroundColor(isHighPriorityToday ? Theme.Colors.priority : Theme.Colors.textMuted)
                     .frame(width: 20)
@@ -302,7 +303,7 @@ struct TaskEditSheet: View {
                     .frame(width: 32, height: 40)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(FullSurfaceButtonStyle())
 
             TextField(
                 "Подзадача",
@@ -332,7 +333,7 @@ struct TaskEditSheet: View {
                     .frame(width: 30, height: 30)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(FullSurfaceButtonStyle())
 
             Image(systemName: "line.3.horizontal")
                 .font(.system(size: 12, weight: .medium))
@@ -417,7 +418,7 @@ struct TaskEditSheet: View {
             .background(Theme.Colors.dangerMuted.opacity(0.6))
             .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md, style: .continuous))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(FullSurfaceButtonStyle())
     }
 
     // MARK: - Actions

@@ -1,14 +1,15 @@
 import SwiftUI
+import SwiftData
 
 // MARK: - Eyebrow Label
 struct EyebrowLabel: View {
     let text: String
     var count: Int? = nil
-    var color: Color = Theme.Colors.textMuted
+    var color: Color = Theme.Colors.textSecondary
 
     var body: some View {
         HStack(spacing: 6) {
-            Text(text.uppercased())
+            Text(text)
             if let count {
                 Text("\(count)")
                     .opacity(0.7)
@@ -25,11 +26,11 @@ struct EyebrowLabel: View {
 struct SectionTitle: View {
     let text: String
     var count: Int? = nil
-    var color: Color = Theme.Colors.textMuted
+    var color: Color = Theme.Colors.textSecondary
 
     var body: some View {
         HStack(spacing: 7) {
-            Text("// " + text.uppercased())
+            Text(text)
                 .foregroundColor(color)
             if let count {
                 Text("\(count)")
@@ -37,7 +38,7 @@ struct SectionTitle: View {
             }
         }
         .font(Theme.Typography.section)
-        .tracking(0.6)
+        .tracking(0)
         .lineLimit(1)
     }
 }
@@ -45,7 +46,6 @@ struct SectionTitle: View {
 // MARK: - Task Checkbox
 struct TaskCheckbox: View {
     let isDone: Bool
-    var isPriority: Bool = false
     var size: CGFloat = 22
 
     var body: some View {
@@ -53,7 +53,7 @@ struct TaskCheckbox: View {
             Circle()
                 .fill(isDone ? Theme.Colors.inverse : Color.clear)
             Circle()
-                .strokeBorder(strokeColor, lineWidth: isPriority && !isDone ? 2 : 1.5)
+                .strokeBorder(strokeColor, lineWidth: 1.5)
 
             if isDone {
                 Image(systemName: "checkmark")
@@ -66,7 +66,7 @@ struct TaskCheckbox: View {
 
     private var strokeColor: Color {
         if isDone { return Theme.Colors.inverse }
-        return isPriority ? Theme.Colors.priority : Theme.Colors.ruleStrong
+        return Theme.Colors.textMuted
     }
 }
 
@@ -82,85 +82,33 @@ struct ScopeTab: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 6) {
-                if let color {
-                    Circle()
-                        .fill(isSelected ? Theme.Colors.onAccent : color)
-                        .frame(width: 6, height: 6)
-                }
-
-                Text(title.uppercased())
-                    .font(Theme.Typography.numeric(11, weight: isSelected ? .bold : .medium))
-                    .tracking(0.4)
-                    .lineLimit(1)
-
-                if let count, count > 0 {
-                    Text("\(count)")
-                        .contentTransition(.numericText())
-                        .font(Theme.Typography.numeric(11, weight: isSelected ? .bold : .regular))
-                        .opacity(isSelected ? 0.7 : 1)
-                }
+                if let color { Circle().fill(color).frame(width: 6, height: 6) }
+                Text(title).font(.footnote.weight(.medium)).lineLimit(1)
             }
-            .foregroundColor(isSelected ? Theme.Colors.onAccent : Theme.Colors.textSecondary)
-            .padding(.horizontal, 12)
-            .frame(height: 30)
-            .background(
-                Capsule()
-                    .fill(isSelected ? Theme.Colors.accent : Color.clear)
-            )
-            .overlay(
-                Capsule()
-                    .strokeBorder(isSelected ? Theme.Colors.accent : Theme.Colors.ruleStrong, lineWidth: 1)
-            )
-            .fixedSize()
-            .contentShape(Capsule())
+            .foregroundStyle(isSelected ? Theme.Colors.onAccent : Theme.Colors.textSecondary)
+            .padding(.horizontal, 16)
+            .frame(minHeight: 38)
+            .background(isSelected ? Theme.Colors.accent : Theme.Colors.surfaceElevated, in: Capsule())
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(FullSurfaceButtonStyle())
+        .accessibilityLabel(title)
+        .accessibilityValue(count.map { "Открытых задач: \($0)" } ?? "")
+        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
         .animation(reduceMotion ? nil : Theme.Motion.quick, value: isSelected)
-        .animation(reduceMotion ? nil : Theme.Motion.quick, value: count)
     }
 }
 
-// MARK: - Context Chip
+// Categories share the same visual language as the main filters.
 struct ContextChip: View {
     let title: String
     var color: Color? = nil
     var count: Int? = nil
     let isSelected: Bool
     let action: () -> Void
-
     var body: some View {
-        Button(action: action) {
-            HStack(spacing: 7) {
-                if let color {
-                    Circle()
-                        .fill(isSelected ? Theme.Colors.onAccent : color)
-                        .frame(width: 7, height: 7)
-                }
-
-                Text(title)
-                    .font(.system(size: 14, weight: isSelected ? .semibold : .medium))
-                    .lineLimit(1)
-
-                if let count, count > 0 {
-                    Text("\(count)")
-                        .font(Theme.Typography.numeric(11))
-                        .opacity(0.7)
-                }
-            }
-            .foregroundColor(isSelected ? Theme.Colors.onAccent : Theme.Colors.textPrimary)
-            .padding(.horizontal, 13)
-            .frame(height: 34)
-            .background(
-                Capsule()
-                    .fill(isSelected ? Theme.Colors.accent : Theme.Colors.fill)
-            )
-            .overlay(
-                Capsule()
-                    .strokeBorder(isSelected ? Theme.Colors.accent : Theme.Colors.ruleStrong, lineWidth: 1)
-            )
-            .contentShape(Capsule())
-        }
-        .buttonStyle(.plain)
+        ScopeTab(title: title, color: color, count: count, isSelected: isSelected, action: action)
     }
 }
 
@@ -217,26 +165,6 @@ struct Hairline: View {
     }
 }
 
-// MARK: - Stat Block
-struct StatBlock: View {
-    let value: String
-    let label: String
-    var tint: Color = Theme.Colors.textPrimary
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(value)
-                .font(Theme.Typography.figure(30))
-                .foregroundColor(tint)
-                .lineLimit(1)
-                .minimumScaleFactor(0.6)
-
-            EyebrowLabel(text: label)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-}
-
 // MARK: - Submit Button
 struct SubmitCircleButton: View {
     let isEnabled: Bool
@@ -253,9 +181,10 @@ struct SubmitCircleButton: View {
                     .foregroundColor(isEnabled ? Theme.Colors.onAccent : Theme.Colors.textMuted)
             }
             .frame(width: size, height: size)
-            .contentShape(Circle())
+            .frame(minWidth: 44, minHeight: 44)
+            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(FullSurfaceButtonStyle())
         .disabled(!isEnabled)
     }
 }
@@ -271,9 +200,9 @@ struct PriorityToggleButton: View {
             isOn.toggle()
         } label: {
             ZStack {
-                Image(systemName: "flame")
+                Image(systemName: "flag")
                     .opacity(isOn ? 0 : 1)
-                Image(systemName: "flame.fill")
+                Image(systemName: "flag.fill")
                     .opacity(isOn ? 1 : 0)
             }
             .font(.system(size: size * 0.5, weight: .medium))
@@ -282,7 +211,9 @@ struct PriorityToggleButton: View {
             .background(Circle().fill(isOn ? Theme.Colors.priority.opacity(0.16) : Color.clear))
             .contentShape(Circle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(FullSurfaceButtonStyle())
+        .accessibilityLabel(isOn ? "Снять высокий приоритет" : "Высокий приоритет")
+        .accessibilityValue(isOn ? "Включён" : "Выключен")
         .help(isOn ? "Снять высокий приоритет" : "Высокий приоритет")
     }
 }
@@ -304,7 +235,7 @@ struct FloatingGlass<S: Shape>: ViewModifier {
                     .glassEffectID(id, in: namespace)
                     .glassEffectTransition(.matchedGeometry)
             } else {
-                content.glassEffect(.regular.interactive(), in: shape)
+                content.glassEffect(.regular, in: shape)
             }
         } else {
             content.background(.regularMaterial, in: shape)
@@ -313,16 +244,110 @@ struct FloatingGlass<S: Shape>: ViewModifier {
     }
 }
 
-/// Matches the Today title's date row and spacing without showing a subtitle.
+/// Gives custom buttons a hit area covering their entire laid-out label.
+struct FullSurfaceButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .contentShape(.interaction, Rectangle())
+            .opacity(configuration.isPressed ? 0.7 : 1)
+    }
+}
+
+struct CurrentDateLabel: View {
+    var date: Date? = nil
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 60)) { timeline in
+            let value = (date ?? timeline.date).formatted(
+                .dateTime.weekday(.wide).day().month(.wide).locale(Locale(identifier: "ru_RU")))
+            Text(value.prefix(1).uppercased() + value.dropFirst())
+                .font(Theme.Typography.caption)
+                .foregroundStyle(Theme.Colors.textSecondary)
+                .accessibilityIdentifier("current-date")
+        }
+    }
+}
+
 struct ScreenHeading: View {
     let text: String
     var body: some View {
-        Text(text)
-            .font(Theme.Typography.display)
-            .tracking(Theme.Typography.displayTracking)
-            .foregroundStyle(Theme.Colors.textPrimary)
-            .frame(height: 43, alignment: .leading)
-            .padding(.top, 40)
-            .frame(maxWidth: .infinity, alignment: .leading)
+        VStack(alignment: .leading, spacing: 8) {
+            CurrentDateLabel().frame(minHeight: 28, alignment: .leading)
+            Text(text.uppercased())
+                .font(Theme.Typography.display)
+                .tracking(Theme.Typography.displayTracking)
+                .foregroundStyle(Theme.Colors.textPrimary)
+                .lineLimit(2)
+                .minimumScaleFactor(0.75)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityAddTraits(.isHeader)
+        }
+        .padding(.top, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+struct CaptureCategoryPicker: View {
+    @Query(sort: [SortDescriptor(\Tag.sortOrder), SortDescriptor(\Tag.createdAt)]) private var tags: [Tag]
+    @Binding var selection: Tag?
+
+    private var selectedID: Binding<UUID?> {
+        Binding(
+            get: { selection?.id },
+            set: { id in selection = tags.first { $0.id == id } }
+        )
+    }
+
+    var body: some View {
+        Menu {
+            Picker("Категория", selection: selectedID) {
+                Text("Без категории").tag(nil as UUID?)
+                ForEach(tags) { tag in
+                    Text(tag.name).tag(Optional(tag.id))
+                }
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Circle().fill(selection?.color ?? Theme.Colors.textMuted).frame(width: 7, height: 7)
+                Text(selection?.name ?? "Без категории").font(Theme.Typography.caption).lineLimit(1)
+                Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold))
+            }
+            .padding(.horizontal, 12).padding(.vertical, 8)
+            .background(Theme.Colors.fillStrong, in: Capsule())
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize(horizontal: true, vertical: false)
+        .accessibilityLabel("Категория: " + (selection?.name ?? "Без категории"))
+        .accessibilityIdentifier("capture-category-picker")
+    }
+}
+
+/// The priority heading also accepts tasks when the section is empty.
+struct PrioritySectionTitle: View {
+    var count: Int
+    var color: Color
+    var onDropTask: (UUID) -> Bool
+    @State private var isTargeted = false
+
+    var body: some View {
+        HStack {
+            SectionTitle(text: "Приоритет", count: count, color: isTargeted ? Theme.Colors.priority : color)
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+        .contentShape(Rectangle())
+        .dropDestination(for: String.self) { items, _ in
+            guard let rawID = items.first, let id = UUID(uuidString: rawID) else { return false }
+            return onDropTask(id)
+        } isTargeted: {
+            isTargeted = $0
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Приоритет")
+        .accessibilityValue("Задач: \(count)")
+        .accessibilityAddTraits(.isHeader)
+        .accessibilityIdentifier("priority-drop-target")
     }
 }

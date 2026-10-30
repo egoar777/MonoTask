@@ -16,6 +16,7 @@ struct SharedMembersView: View {
     var body: some View {
         NavigationStack {
             Form {
+                Section { CurrentDateLabel() }
                 if let list {
                     Section("Список") {
                         Text(list.title)

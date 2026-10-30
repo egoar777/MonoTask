@@ -1,11 +1,5 @@
 import SwiftUI
 
-#if canImport(UIKit)
-import UIKit
-#elseif canImport(AppKit)
-import AppKit
-#endif
-
 extension Color {
     /// Initialize a Color from a HEX string (e.g. "#6366F1", "6366F1", or with alpha "#6366F1FF")
     init(hex: String) {
@@ -32,32 +26,5 @@ extension Color {
             blue: Double(b) / 255.0,
             opacity: Double(a) / 255.0
         )
-    }
-
-    /// Converts SwiftUI Color to Hex String
-    func toHex() -> String {
-        #if canImport(UIKit)
-        let uiColor = UIColor(self)
-        var red: CGFloat = 0
-        var green: CGFloat = 0
-        var blue: CGFloat = 0
-        var alpha: CGFloat = 0
-        uiColor.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
-        return String(
-            format: "#%02lX%02lX%02lX", lroundf(Float(red * 255)), lroundf(Float(green * 255)),
-            lroundf(Float(blue * 255)))
-        #elseif canImport(AppKit)
-        let nsColor = NSColor(self).usingColorSpace(.deviceRGB) ?? NSColor(self)
-        var red: CGFloat = 0
-        var green: CGFloat = 0
-        var blue: CGFloat = 0
-        var alpha: CGFloat = 0
-        nsColor.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
-        return String(
-            format: "#%02lX%02lX%02lX", lroundf(Float(red * 255)), lroundf(Float(green * 255)),
-            lroundf(Float(blue * 255)))
-        #else
-        return "#6366F1"
-        #endif
     }
 }

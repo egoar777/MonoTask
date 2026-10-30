@@ -23,23 +23,47 @@ final class ReviewTests: XCTestCase {
         XCTAssertEqual(settings.frame.minY, todayY, accuracy: 1)
     }
 
+    func testLongPressDragPromotesTask() {
+        app.buttons["task-scope-menu"].tap()
+        app.buttons["task-scope-all"].tap()
+        let task = app.staticTexts["Разобрать конспект по сетям"]
+        XCTAssertTrue(task.waitForExistence(timeout: 3))
+        let destination = app.descendants(matching: .any).matching(identifier: "priority-drop-target").firstMatch
+        XCTAssertTrue(destination.exists)
+        XCTAssertFalse(app.staticTexts["Перетащите сюда для приоритета"].exists)
+        let start = task.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        let end = app.coordinate(withNormalizedOffset: .zero).withOffset(
+            CGVector(dx: task.frame.midX, dy: destination.frame.midY))
+        start.press(forDuration: 0.8, thenDragTo: end)
+        let previousFirst = app.staticTexts["Подготовить проект к защите"]
+        XCTAssertTrue(task.waitForExistence(timeout: 3))
+        XCTAssertLessThan(task.frame.minY, previousFirst.frame.minY)
+    }
+
     func testCompletionAndFilters() {
-        XCTAssertEqual(app.staticTexts["focus-completion-count"].label, "1")
+        let progress = app.staticTexts["focus-completion-count"]
+        let before = progress.label.split(separator: " ").compactMap { Int($0) }
+        XCTAssertEqual(before.count, 2)
+        XCTAssertEqual(before.first, 1)
         app.buttons.matching(identifier: "Отметить выполненной").firstMatch.tap()
-        let updated = NSPredicate(format: "label == '2'")
+        let updated = NSPredicate(format: "label == %@", "Выполнено 2 из \(before[1])")
         expectation(for: updated, evaluatedWith: app.staticTexts["focus-completion-count"])
         waitForExpectations(timeout: 4)
+        app.buttons["task-scope-menu"].tap()
         app.buttons["task-scope-all"].tap()
-        XCTAssertTrue(app.staticTexts["/ 7 ГОТОВО"].waitForExistence(timeout: 3))
-        app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'task-scope-' AND label BEGINSWITH 'УЧЁБА'"))
+        XCTAssertTrue(app.staticTexts["Выполнено 2 из 7"].waitForExistence(timeout: 3))
+        app.buttons["task-scope-menu"].tap()
+        app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'task-scope-' AND label BEGINSWITH 'Учёба'"))
             .firstMatch.tap()
-        XCTAssertTrue(app.staticTexts["/ 3 ГОТОВО"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["Выполнено 2 из 3"].waitForExistence(timeout: 3))
         XCTAssertFalse(app.staticTexts["Закончить макет приложения"].exists)
     }
     func testSettingsAndSchedule() {
         app.buttons["navigation-settings"].tap()
         app.staticTexts["Категории и расписание"].tap()
-        app.buttons.containing(.staticText, identifier: "Учёба").firstMatch.tap()
+        let category = app.buttons["settings-edit-category-Учёба"]
+        XCTAssertTrue(category.waitForExistence(timeout: 3))
+        category.tap()
         XCTAssertTrue(app.buttons["Сохранить"].waitForExistence(timeout: 3))
         app.buttons["ПН"].tap()
         app.buttons["Сохранить"].tap()
@@ -82,6 +106,23 @@ final class MotionAndRefreshTests: XCTestCase {
         app.launch()
         XCTAssertTrue(app.staticTexts["СЕГОДНЯ"].waitForExistence(timeout: 10))
         return app
+    }
+
+    func testScrollCollapsesAndRestoresHeader() {
+        let app = XCUIApplication(bundleIdentifier: "com.monotask")
+        app.launchArguments = ["--scroll-gesture-test"]
+        app.launch()
+        let title = app.staticTexts["СЕГОДНЯ"]
+        XCTAssertTrue(title.waitForExistence(timeout: 10))
+        let expandedHeight = title.frame.height
+        let scroll = app.scrollViews.allElementsBoundByIndex.max { $0.frame.height < $1.frame.height }!
+        scroll.swipeUp()
+        XCTAssertLessThan(title.frame.height, expandedHeight - 5)
+        XCTAssertFalse(app.staticTexts["focus-completion-count"].isHittable)
+        scroll.swipeDown()
+        scroll.swipeDown()
+        XCTAssertTrue(app.staticTexts["focus-completion-count"].waitForExistence(timeout: 3))
+        XCTAssertEqual(title.frame.height, expandedHeight, accuracy: 1)
     }
 
     func testKeyboardCollapsesAndRestoresHeader() {
@@ -240,6 +281,7 @@ final class FloatingNavigationTests: XCTestCase {
         app.launchArguments = ["--scroll-gesture-test"]
         app.launch()
         XCTAssertTrue(app.buttons["navigation-add-task"].waitForExistence(timeout: 8))
+        app.buttons["task-scope-menu"].tap()
         app.buttons["task-scope-all"].tap()
         app.swipeUp()
         let scroll = app.scrollViews.allElementsBoundByIndex.max { $0.frame.height < $1.frame.height }!
@@ -263,11 +305,12 @@ final class FloatingNavigationTests: XCTestCase {
         app.launchArguments = ["--scroll-gesture-test"]
         app.launch()
         XCTAssertTrue(app.buttons["navigation-add-task"].waitForExistence(timeout: 8))
+        app.buttons["task-scope-menu"].tap()
         app.buttons["task-scope-all"].tap()
         let task = app.staticTexts["Тест прокрутки · 1"]
         XCTAssertTrue(task.waitForExistence(timeout: 3))
         task.swipeLeft()
-        let delete = app.buttons["УДАЛИТЬ"].firstMatch
+        let delete = app.buttons["Удалить"].firstMatch
         if delete.waitForExistence(timeout: 1) { delete.tap() }
         let undo = app.buttons["Отменить удаление"]
         XCTAssertTrue(undo.waitForExistence(timeout: 3))
@@ -281,6 +324,31 @@ final class FloatingNavigationTests: XCTestCase {
         undo.tap()
         XCTAssertTrue(task.waitForExistence(timeout: 3))
         XCTAssertFalse(undo.exists)
+    }
+
+    func testCaptureCategorySelectionPersistsOnTask() {
+        let app = XCUIApplication(bundleIdentifier: "com.monotask")
+        app.launchArguments = ["--screenshots"]
+        app.launch()
+        XCTAssertTrue(app.buttons["navigation-add-task"].waitForExistence(timeout: 8))
+        app.buttons["navigation-add-task"].tap()
+        let field = app.textFields["Новая задача"]
+        field.tap()
+        field.typeText("Category selection test")
+        app.buttons["capture-category-picker"].tap()
+        app.buttons["Проекты"].tap()
+        XCTAssertEqual(app.buttons["capture-category-picker"].label, "Категория: Проекты")
+        app.buttons["Добавить задачу"].tap()
+        if app.buttons["Скрыть клавиатуру"].exists { app.buttons["Скрыть клавиатуру"].tap() }
+        app.buttons["Закрыть ввод"].tap()
+        app.buttons["task-scope-menu"].tap()
+        app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'task-scope-' AND label BEGINSWITH 'Проекты'"))
+            .firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["Category selection test"].waitForExistence(timeout: 4))
+        app.buttons["task-scope-menu"].tap()
+        app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'task-scope-' AND label BEGINSWITH 'Учёба'"))
+            .firstMatch.tap()
+        XCTAssertFalse(app.staticTexts["Category selection test"].exists)
     }
 
     func testNavigationAndAddFromAnotherSection() {
@@ -314,6 +382,7 @@ final class FloatingNavigationTests: XCTestCase {
         field.typeText("Navigation task")
         app.keyboards.buttons["Done"].tap()
         if app.buttons["Скрыть клавиатуру"].exists { app.buttons["Скрыть клавиатуру"].tap() }
+        app.buttons["task-scope-menu"].tap()
         app.buttons["task-scope-all"].tap()
         XCTAssertTrue(app.staticTexts["Navigation task"].waitForExistence(timeout: 4))
         app.buttons["Закрыть ввод"].tap()
@@ -335,6 +404,7 @@ final class TaskEditingTests: XCTestCase {
         app.keyboards.buttons["Done"].tap()
         if app.buttons["Скрыть клавиатуру"].exists { app.buttons["Скрыть клавиатуру"].tap() }
         app.buttons["Закрыть ввод"].tap()
+        app.buttons["task-scope-menu"].tap()
         app.buttons["task-scope-all"].tap()
         let task = app.staticTexts["Release review"]
         XCTAssertTrue(task.waitForExistence(timeout: 3))
@@ -421,7 +491,7 @@ final class SharedListUITests: XCTestCase {
         done.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.5)).tap()
         XCTAssertEqual(done.value as? String, "1")
         app.buttons["shared-save-task"].tap()
-        XCTAssertTrue(app.staticTexts["1 / 2 выполнено"].waitForExistence(timeout: 4))
+        XCTAssertTrue(app.staticTexts["Выполнено 1 из 2"].waitForExistence(timeout: 4))
         let shot = XCTAttachment(screenshot: app.screenshot())
         shot.name = "SharedListTasks"
         shot.lifetime = .keepAlways
@@ -445,7 +515,8 @@ final class SharedListUITests: XCTestCase {
         app.swipeDown()
         app.buttons["Удалить"].tap()
         app.buttons["Подтвердить"].tap()
-        XCTAssertFalse(app.staticTexts["Саша"].exists)
+        expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: app.staticTexts["Саша"])
+        waitForExpectations(timeout: 4)
     }
 
     func testLiveHTTPSInvitationOpensApp() throws {
@@ -507,6 +578,167 @@ final class SharedListUITests: XCTestCase {
         name.typeText("Новый общий список")
         app.alerts.buttons["Создать"].tap()
         XCTAssertTrue(app.buttons["shared-add-task"].waitForExistence(timeout: 4))
-        XCTAssertTrue(app.staticTexts["0 / 0 выполнено"].exists)
+        XCTAssertTrue(app.staticTexts["Выполнено 0 из 0"].exists)
+    }
+}
+
+@MainActor
+final class SwipeAndCaptureRegressionTests: XCTestCase {
+    private func launch() -> XCUIApplication {
+        continueAfterFailure = false
+        let app = XCUIApplication(bundleIdentifier: "com.monotask")
+        app.launchArguments = ["--scroll-gesture-test"]
+        app.launch()
+        XCTAssertTrue(app.buttons["navigation-add-task"].waitForExistence(timeout: 8))
+        app.buttons["task-scope-menu"].tap()
+        app.buttons["task-scope-all"].tap()
+        return app
+    }
+
+    func testShortSwipeRevealsVisibleActionAndButtonDeletes() {
+        let app = launch()
+        let task = app.staticTexts["Тест прокрутки · 1"]
+        XCTAssertTrue(task.waitForExistence(timeout: 3))
+        do {
+            let start = app.coordinate(withNormalizedOffset: .zero)
+                .withOffset(CGVector(dx: app.frame.width - 32, dy: task.frame.midY))
+            start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: -100, dy: 0)))
+            let delete = app.buttons["Удалить"].firstMatch
+            XCTAssertTrue(delete.waitForExistence(timeout: 3))
+            XCTAssertTrue(delete.isHittable)
+            XCTAssertTrue(app.staticTexts["Удалить"].firstMatch.exists)
+            XCTAssertTrue(task.exists)
+            XCTAssertFalse(app.buttons["Отменить удаление"].exists)
+        }
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = "VisibleSwipeDeleteAction"
+        shot.lifetime = .keepAlways
+        add(shot)
+        app.buttons["Удалить"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["Отменить удаление"].waitForExistence(timeout: 3))
+        XCTAssertFalse(task.exists)
+        app.buttons["Отменить удаление"].tap()
+        XCTAssertTrue(task.waitForExistence(timeout: 3))
+    }
+
+    func testSecondShortSwipeDeletesAndCanBeUndoneRepeatedly() {
+        let app = launch()
+        let task = app.staticTexts["Тест прокрутки · 1"]
+        for _ in 0..<2 {
+            XCTAssertTrue(task.waitForExistence(timeout: 3))
+            let origin = app.coordinate(withNormalizedOffset: .zero)
+            let first = origin.withOffset(CGVector(dx: app.frame.width - 32, dy: task.frame.midY))
+            first.press(forDuration: 0.05, thenDragTo: first.withOffset(CGVector(dx: -100, dy: 0)))
+            XCTAssertTrue(app.buttons["Удалить"].firstMatch.waitForExistence(timeout: 3))
+            XCTAssertTrue(task.exists)
+            XCTAssertFalse(app.buttons["Отменить удаление"].exists)
+            // Start on the shifted row, away from the exposed delete button.
+            let second = origin.withOffset(CGVector(dx: app.frame.width - 140, dy: task.frame.midY))
+            second.press(forDuration: 0.05, thenDragTo: second.withOffset(CGVector(dx: -100, dy: 0)))
+            XCTAssertTrue(app.buttons["Отменить удаление"].waitForExistence(timeout: 3))
+            XCTAssertFalse(task.exists)
+            app.buttons["Отменить удаление"].tap()
+        }
+        XCTAssertTrue(task.waitForExistence(timeout: 3))
+    }
+
+    func testRightSwipeClosesActionWithoutDeleting() {
+        let app = launch()
+        let task = app.staticTexts["Тест прокрутки · 1"]
+        XCTAssertTrue(task.waitForExistence(timeout: 3))
+        let origin = app.coordinate(withNormalizedOffset: .zero)
+        let start = origin.withOffset(CGVector(dx: app.frame.width - 32, dy: task.frame.midY))
+        start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: -100, dy: 0)))
+        XCTAssertTrue(app.buttons["Удалить"].firstMatch.waitForExistence(timeout: 3))
+        let close = origin.withOffset(CGVector(dx: 120, dy: task.frame.midY))
+        close.press(forDuration: 0.05, thenDragTo: close.withOffset(CGVector(dx: 110, dy: 0)))
+        XCTAssertTrue(task.exists)
+        XCTAssertFalse(app.buttons["Удалить"].firstMatch.isHittable)
+        XCTAssertFalse(app.buttons["Отменить удаление"].exists)
+        app.swipeUp()
+        XCTAssertTrue(app.staticTexts["Тест прокрутки · 10"].waitForExistence(timeout: 3))
+    }
+
+    func testFullSwipeStillDeletesAndCanBeUndone() {
+        let app = launch()
+        let task = app.staticTexts["Тест прокрутки · 1"]
+        XCTAssertTrue(task.waitForExistence(timeout: 3))
+        let start = app.coordinate(withNormalizedOffset: .zero)
+            .withOffset(CGVector(dx: app.frame.width - 28, dy: task.frame.midY))
+        let end = app.coordinate(withNormalizedOffset: .zero)
+            .withOffset(CGVector(dx: 24, dy: task.frame.midY))
+        start.press(forDuration: 0.05, thenDragTo: end)
+        XCTAssertTrue(app.buttons["Отменить удаление"].waitForExistence(timeout: 3))
+        app.buttons["Отменить удаление"].tap()
+        XCTAssertTrue(task.waitForExistence(timeout: 3))
+    }
+
+    func testCaptureExpandsWithoutKeyboardAndPreservesDraft() {
+        let app = launch()
+        for section in ["today", "activity", "settings"] {
+            app.buttons["navigation-\(section)"].tap()
+            app.buttons["navigation-add-task"].tap()
+            let field = app.textFields["Новая задача"]
+            XCTAssertTrue(field.waitForExistence(timeout: 3))
+            XCTAssertTrue(field.isHittable)
+            XCTAssertFalse(app.keyboards.firstMatch.exists)
+            XCTAssertTrue(app.buttons["capture-category-picker"].isHittable)
+            field.tap()
+            XCTAssertTrue(app.buttons["Скрыть клавиатуру"].waitForExistence(timeout: 3))
+            if section == "today" { field.typeText("Draft") }
+            XCTAssertEqual(field.value as? String, "Draft")
+            app.buttons["Скрыть клавиатуру"].tap()
+            app.buttons["Закрыть ввод"].tap()
+            XCTAssertTrue(app.buttons["navigation-add-task"].waitForExistence(timeout: 3))
+            XCTAssertFalse(field.isHittable)
+        }
+    }
+}
+
+@MainActor
+final class HeaderInteractionTests: XCTestCase {
+    func testMenuAndButtonEdges() {
+        let app = XCUIApplication(bundleIdentifier: "com.monotask")
+        app.launchArguments = ["--screenshots"]
+        app.launch()
+        let menu = app.buttons["task-scope-menu"]
+        XCTAssertTrue(menu.waitForExistence(timeout: 8))
+        XCTAssertFalse(app.buttons["task-scope-all"].exists)
+        menu.coordinate(withNormalizedOffset: CGVector(dx: 0.08, dy: 0.5)).tap()
+        XCTAssertTrue(app.buttons["task-scope-all"].waitForExistence(timeout: 3))
+        app.buttons["task-scope-all"].tap()
+        XCTAssertTrue(app.staticTexts["ВСЕ ЗАДАЧИ"].waitForExistence(timeout: 3))
+        app.buttons["task-scope-focus"].coordinate(withNormalizedOffset: CGVector(dx: 0.08, dy: 0.5)).tap()
+        XCTAssertTrue(app.staticTexts["СЕГОДНЯ"].waitForExistence(timeout: 3))
+        app.buttons["open-shared-lists"].coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.5)).tap()
+        XCTAssertTrue(app.staticTexts["ОБЩИЕ СПИСКИ"].waitForExistence(timeout: 3))
+        XCTAssertTrue(
+            app.staticTexts.matching(identifier: "current-date").allElementsBoundByIndex.contains { $0.isHittable })
+    }
+
+    func testDatesOnMainAndSettingsPages() {
+        let app = XCUIApplication(bundleIdentifier: "com.monotask")
+        app.launchArguments = ["--screenshots"]
+        app.launch()
+        let date = app.staticTexts["current-date"].firstMatch
+        XCTAssertTrue(date.waitForExistence(timeout: 8))
+        let expected = date.label
+        for section in ["navigation-activity", "navigation-settings"] {
+            app.buttons[section].coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.5)).tap()
+            XCTAssertTrue(date.waitForExistence(timeout: 3))
+            XCTAssertEqual(date.label, expected)
+        }
+        let categories = app.staticTexts["Категории и расписание"]
+        XCTAssertTrue(categories.waitForExistence(timeout: 3))
+        categories.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
+        XCTAssertTrue(
+            app.staticTexts[
+                "Выберите категорию, чтобы настроить цвет и дни фокуса. Для изменения порядка перетащите строку."
+            ].waitForExistence(timeout: 3))
+        let visibleDate = app.staticTexts.matching(identifier: "current-date").allElementsBoundByIndex.first {
+            $0.isHittable
+        }
+        XCTAssertNotNil(visibleDate)
+        XCTAssertEqual(visibleDate?.label, expected)
     }
 }

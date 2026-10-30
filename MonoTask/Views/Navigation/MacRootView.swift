@@ -103,7 +103,7 @@ struct MacRootView: View {
                     .list(.all), title: "Все задачи", icon: "tray", tint: Theme.Colors.textSecondary,
                     count: openCount(.all))
                 sidebarRow(
-                    .list(.highPriority), title: "Приоритет", icon: "flame", tint: Theme.Colors.priority,
+                    .list(.highPriority), title: "Приоритет", icon: "flag", tint: Theme.Colors.priority,
                     count: openCount(.highPriority))
             } header: {
                 EyebrowLabel(text: "Задачи")
@@ -126,7 +126,7 @@ struct MacRootView: View {
                             .frame(width: 18, height: 18)
                             .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(FullSurfaceButtonStyle())
                     .help("Новая категория")
                 }
             }
@@ -187,9 +187,9 @@ struct MacRootView: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 7)
             .contentShape(RoundedRectangle(cornerRadius: 9))
-            .overlay(selectionOutline(for: item))
+            .background(selectionOutline(for: item))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(FullSurfaceButtonStyle())
         .listRowInsets(EdgeInsets(top: 2, leading: 4, bottom: 2, trailing: 4))
         .listRowBackground(Color.clear)
         .accessibilityAddTraits(selection == item ? .isSelected : [])
@@ -232,9 +232,9 @@ struct MacRootView: View {
                     .fill(dropTargetTagId == tag.id ? Theme.Colors.fillStrong : Color.clear)
             )
             .contentShape(RoundedRectangle(cornerRadius: 9))
-            .overlay(selectionOutline(for: item))
+            .background(selectionOutline(for: item))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(FullSurfaceButtonStyle())
         .listRowInsets(EdgeInsets(top: 2, leading: 4, bottom: 2, trailing: 4))
         .listRowBackground(Color.clear)
         .accessibilityAddTraits(selection == item ? .isSelected : [])
@@ -263,7 +263,7 @@ struct MacRootView: View {
 
     private func selectionOutline(for item: SidebarSelection) -> some View {
         RoundedRectangle(cornerRadius: 9, style: .continuous)
-            .strokeBorder(selection == item ? Theme.Colors.accent.opacity(0.75) : Color.clear, lineWidth: 1)
+            .fill(selection == item ? Theme.Colors.fillStrong : Color.clear)
             .allowsHitTesting(false)
     }
 

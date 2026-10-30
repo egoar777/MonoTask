@@ -11,10 +11,20 @@ struct SharedListDetailView: View {
         Group {
             if let list {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 20) {
+                    VStack(alignment: .leading, spacing: 12) {
                         let tasks = store.tasks(in: listID)
-                        Text("\(tasks.filter(\.isDone).count) / \(tasks.count) выполнено")
-                            .font(Theme.Typography.callout).foregroundStyle(Theme.Colors.textSecondary)
+                        ScreenHeading(text: list.title).padding(.top, -24)
+                        Label("Участников: \(store.members(in: listID).count)", systemImage: "person.2")
+                            .font(Theme.Typography.caption).foregroundStyle(Theme.Colors.textSecondary)
+                        VStack(spacing: 8) {
+                            HStack {
+                                Text("Выполнено \(tasks.filter(\.isDone).count) из \(tasks.count)")
+                                Spacer()
+                            }.font(Theme.Typography.caption)
+                            ProgressLine(
+                                progress: tasks.isEmpty ? 0 : Double(tasks.filter(\.isDone).count) / Double(tasks.count)
+                            )
+                        }.padding(.vertical, 8)
                         if let message = store.errorMessage {
                             Text(message).font(Theme.Typography.callout).foregroundStyle(Theme.Colors.textSecondary)
                         }
@@ -28,19 +38,20 @@ struct SharedListDetailView: View {
                                 "В списке нет задач", systemImage: "checklist",
                                 description: Text("Добавьте первую задачу — её увидят все участники."))
                         }
+                        if !tasks.isEmpty { SectionTitle(text: "Задачи").padding(.top, 8) }
                         ForEach(tasks) { task in taskRow(task) }
                         Button {
                             editingTask = SharedTask(listID: listID, title: "")
                         } label: {
                             Label("Новая задача", systemImage: "plus").frame(maxWidth: .infinity, minHeight: 52)
                         }
-                        .buttonStyle(.plain).modifier(FloatingGlass(shape: Capsule()))
+                        .buttonStyle(FullSurfaceButtonStyle()).modifier(FloatingGlass(shape: Capsule()))
                         .accessibilityIdentifier("shared-add-task")
                     }.padding(20).frame(maxWidth: 760).frame(maxWidth: .infinity)
                 }
                 .refreshable { await store.sync() }
                 .background(Theme.Colors.background)
-                .navigationTitle(list.title)
+                .navigationTitle("")
                 .toolbar {
                     ToolbarItem(placement: .primaryAction) {
                         Button {
@@ -66,8 +77,8 @@ struct SharedListDetailView: View {
     }
 
     private func taskRow(_ task: SharedTask) -> some View {
-        GroupCard(padding: 14) {
-            HStack(spacing: 10) {
+        GroupCard(padding: 8) {
+            HStack(spacing: 4) {
                 Button {
                     var edited = task
                     edited.isDone.toggle()
@@ -76,7 +87,7 @@ struct SharedListDetailView: View {
                     Task { await store.sync() }
                 } label: {
                     TaskCheckbox(isDone: task.isDone).frame(width: 44, height: 44)
-                }.buttonStyle(.plain).accessibilityLabel(
+                }.buttonStyle(FullSurfaceButtonStyle()).accessibilityLabel(
                     task.isDone ? "Вернуть общую задачу" : "Выполнить общую задачу")
                 Button {
                     editingTask = task
@@ -84,9 +95,10 @@ struct SharedListDetailView: View {
                     VStack(alignment: .leading, spacing: 6) {
                         HStack(spacing: 6) {
                             if task.isHighPriority {
-                                Image(systemName: "flame.fill").foregroundStyle(Theme.Colors.priority)
+                                Image(systemName: "flag.fill").foregroundStyle(Theme.Colors.priority)
                             }
                             Text(task.title).font(Theme.Typography.body).strikethrough(task.isDone)
+                                .foregroundStyle(task.isDone ? Theme.Colors.textMuted : Theme.Colors.textPrimary)
                         }
                         if !task.notes.isEmpty {
                             Text(task.notes).font(Theme.Typography.caption).foregroundStyle(Theme.Colors.textSecondary)
@@ -103,8 +115,9 @@ struct SharedListDetailView: View {
                                 Text("\(task.subtasks.filter(\.isDone).count)/\(task.subtasks.count) подзадач")
                             }
                         }.font(Theme.Typography.caption).foregroundStyle(Theme.Colors.textMuted)
-                    }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
-                }.buttonStyle(.plain).accessibilityIdentifier("shared-task-\(task.id)")
+                    }.padding(.vertical, 8).padding(.trailing, 6)
+                        .frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
+                }.buttonStyle(FullSurfaceButtonStyle()).accessibilityIdentifier("shared-task-\(task.id)")
             }
         }
     }
@@ -159,6 +172,7 @@ struct SharedTaskEditor: View {
     var body: some View {
         NavigationStack {
             Form {
+                Section { CurrentDateLabel() }
                 Section("Задача") {
                     TextField("Что нужно сделать?", text: $draft.title, axis: .vertical).accessibilityIdentifier(
                         "shared-task-title")
@@ -186,7 +200,7 @@ struct SharedTaskEditor: View {
                             } label: {
                                 Image(systemName: "minus.circle").frame(minWidth: 44, minHeight: 44)
                             }
-                            .buttonStyle(.plain).accessibilityLabel("Удалить подзадачу")
+                            .buttonStyle(FullSurfaceButtonStyle()).accessibilityLabel("Удалить подзадачу")
                         }
                     }
                     if draft.subtasks.count < 100 {
