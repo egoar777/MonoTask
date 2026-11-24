@@ -9,7 +9,7 @@ enum AppTab: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .today: return "Задачи"
+        case .today: return "Папки"
         case .activity: return "Аналитика"
         case .settings: return "Настройки"
         }
@@ -17,7 +17,7 @@ enum AppTab: String, CaseIterable, Identifiable {
 
     var systemImage: String {
         switch self {
-        case .today: return "list.bullet.rectangle"
+        case .today: return "folder"
         case .activity: return "chart.bar"
         case .settings: return "gearshape"
         }
@@ -25,7 +25,7 @@ enum AppTab: String, CaseIterable, Identifiable {
 
     var activeSystemImage: String {
         switch self {
-        case .today: return "list.bullet.rectangle.fill"
+        case .today: return "folder.fill"
         case .activity: return "chart.bar.fill"
         case .settings: return "gearshape"
         }

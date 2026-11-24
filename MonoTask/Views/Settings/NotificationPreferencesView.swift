@@ -1,16 +1,20 @@
 import SwiftUI
 import SwiftData
 import UserNotifications
+import EventKit
 #if os(iOS)
 import UIKit
 #endif
 
 struct NotificationPreferencesView: View {
+    var showsCalendars = true
+    var showsNotifications = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.modelContext) private var context
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.openURL) private var openURL
     @State private var notifications = NotificationService.shared
+    @State private var calendarSync = CalendarSyncService.shared
     @State private var testing = false
     @State private var testSent = false
 
@@ -40,9 +44,54 @@ struct NotificationPreferencesView: View {
     var body: some View {
         @Bindable var notifications = notifications
         VStack(alignment: .leading, spacing: 10) {
-            SectionTitle(text: "Уведомления")
-            GroupCard(padding: 14) {
-                VStack(alignment: .leading, spacing: 16) {
+            if showsCalendars {
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("Apple Calendar и Google Calendar").font(.headline)
+                    Text(
+                        "Напоминания задач создают события с уведомлением в выбранных календарях. Изменения в MonoTask обновляют события; выполнение, удаление задачи или отключение календаря удаляют связанные события."
+                    )
+                    .font(Theme.Typography.caption).foregroundStyle(Theme.Colors.textSecondary)
+                    if calendarSync.hasAccess {
+                        ForEach(calendarSync.calendars, id: \.calendarIdentifier) { calendar in
+                            Toggle(
+                                isOn: Binding(
+                                    get: { calendarSync.selectedIDs.contains(calendar.calendarIdentifier) },
+                                    set: { calendarSync.select(calendar, enabled: $0, context: context) }
+                                )
+                            ) {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(calendar.title)
+                                    Text(calendar.source.title).font(.caption).foregroundStyle(
+                                        Theme.Colors.textSecondary)
+                                }
+                            }
+                        }
+                        if calendarSync.calendars.isEmpty {
+                            Text("Нет доступных календарей для записи.").font(.caption)
+                        }
+                    } else {
+                        Button {
+                            Task { await calendarSync.connect(context: context) }
+                        } label: {
+                            Text("Подключить календари")
+                                .modifier(MonoBrandPill(selected: true))
+                        }
+                        .buttonStyle(MonoBrandPressStyle())
+                        .accessibilityIdentifier("calendar-connect")
+                    }
+                    Text(
+                        "Чтобы выбрать Google Calendar, добавьте аккаунт Google в системных настройках: Приложения → Календарь → Учётные записи → Добавить учётную запись. Включите «Календари»."
+                    )
+                    .font(Theme.Typography.caption).foregroundStyle(Theme.Colors.textSecondary)
+                    if let error = calendarSync.errorMessage {
+                        Text(error).font(.caption).foregroundStyle(Theme.Colors.warning)
+                    }
+                }
+                .padding(16)
+                .modifier(MonoBrandSurface())
+            }
+            if showsNotifications {
+                VStack(alignment: .leading, spacing: 14) {
                     Toggle("Уведомления MonoTask", isOn: $notifications.preferences.enabled)
                         .onChange(of: notifications.preferences.enabled) { _, enabled in
                             if enabled {
@@ -58,18 +107,30 @@ struct NotificationPreferencesView: View {
                         .font(Theme.Typography.caption)
                         .foregroundColor(
                             notifications.authorization == .denied ? Theme.Colors.priority : Theme.Colors.textMuted)
-                    HStack {
-                        if notifications.authorization == .notDetermined {
-                            Button("Разрешить") { Task { _ = await notifications.requestAuthorization() } }
+                    if notifications.authorization == .notDetermined {
+                        Button {
+                            Task { _ = await notifications.requestAuthorization() }
+                        } label: {
+                            Text("Разрешить")
+                                .modifier(MonoBrandPill(selected: true))
                         }
-                        Button("Настройки системы") { openSystemSettings() }
+                        .buttonStyle(MonoBrandPressStyle())
                     }
+                    Button {
+                        openSystemSettings()
+                    } label: {
+                        Text("Настройки системы")
+                            .modifier(MonoBrandPill())
+                    }
+                    .buttonStyle(MonoBrandPressStyle())
                     if notifications.preferences.enabled {
                         Hairline()
                         Toggle("Напоминания задач", isOn: $notifications.preferences.taskReminders)
-                        Text("Выберите дату и время в карточке задачи. Выполнение или удаление отменяет напоминание.")
-                            .font(Theme.Typography.caption)
-                            .foregroundColor(Theme.Colors.textMuted)
+                        Text(
+                            "Выберите дату и время в карточке задачи. Выполнение или удаление отменяет напоминание."
+                        )
+                        .font(Theme.Typography.caption)
+                        .foregroundColor(Theme.Colors.textMuted)
                         Toggle("Утренний план", isOn: $notifications.preferences.morningPlan)
                         if notifications.preferences.morningPlan {
                             DatePicker("Время", selection: morningTime, displayedComponents: .hourAndMinute)
@@ -86,13 +147,14 @@ struct NotificationPreferencesView: View {
                                         Text(day.shortName)
                                             .font(Theme.Typography.numeric(12))
                                             .frame(maxWidth: .infinity, minHeight: 36)
-                                            .background(selected ? Theme.Colors.accent : Theme.Colors.fill)
+                                            .background(selected ? Theme.Colors.accent : MonoBrand.inset)
                                             .foregroundColor(
                                                 selected ? Theme.Colors.background : Theme.Colors.textSecondary
                                             )
-                                            .clipShape(RoundedRectangle(cornerRadius: 7))
+                                            .clipShape(.capsule)
                                     }
-                                    .buttonStyle(FullSurfaceButtonStyle())
+                                    .buttonStyle(MonoBrandPressStyle())
+                                    .animation(reduceMotion ? nil : MonoBrandMotion.control, value: selected)
                                     .accessibilityLabel(day.fullName)
                                     .accessibilityValue(selected ? "Включён" : "Выключен")
                                 }
@@ -105,7 +167,6 @@ struct NotificationPreferencesView: View {
                                 Text("Задачи в плане")
                                 Spacer()
                                 Picker("Задачи в плане", selection: $notifications.preferences.morningScope) {
-                                    Text("Фокус дня").tag("focus")
                                     Text("Только приоритетные").tag("priority")
                                     Text("Все открытые").tag("all")
                                 }
@@ -117,7 +178,9 @@ struct NotificationPreferencesView: View {
                         }
                         Hairline()
                         Toggle("Звук", isOn: $notifications.preferences.sound)
-                        Toggle("Показывать названия задач и категорий", isOn: $notifications.preferences.showPreview)
+                        Toggle(
+                            "Показывать названия задач и папок", isOn: $notifications.preferences.showPreview
+                        )
                         Text("Выключите названия, если хотите скрыть содержимое уведомлений на экране блокировки.")
                             .font(Theme.Typography.caption)
                             .foregroundColor(Theme.Colors.textMuted)
@@ -150,18 +213,28 @@ struct NotificationPreferencesView: View {
                     .font(Theme.Typography.caption)
                     .foregroundColor(Theme.Colors.textMuted)
                 }
-                .animation(reduceMotion ? nil : Theme.Motion.standard, value: notifications.preferences.enabled)
-                .animation(reduceMotion ? nil : Theme.Motion.standard, value: notifications.preferences.morningPlan)
-                .font(Theme.Typography.callout)
-                .foregroundColor(Theme.Colors.textPrimary)
+                .animation(reduceMotion ? nil : MonoBrandMotion.disclosure, value: notifications.preferences.enabled)
+                .animation(
+                    reduceMotion ? nil : MonoBrandMotion.disclosure, value: notifications.preferences.morningPlan
+                )
+                .padding(16)
+                .modifier(MonoBrandSurface())
             }
         }
+        .font(Theme.Typography.callout)
+        .foregroundStyle(Theme.Colors.textPrimary)
+        .toggleStyle(.switch)
         .task {
             await notifications.checkAuthorization()
+            calendarSync.reload()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .EKEventStoreChanged)) { _ in
+            calendarSync.sync(context: context)
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
                 notifications.refresh(context: context)
+                calendarSync.reload()
             }
         }
     }

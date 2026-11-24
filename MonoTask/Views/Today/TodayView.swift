@@ -12,9 +12,11 @@ struct TodayView: View {
     @Binding var captureTag: Tag?
     @Binding var isCaptureActive: Bool
     var captureBottomInset: CGFloat = 88
+    var showsHeader: Bool = true
+    private let canEditTask: () -> Bool
 
     @State private var isHeaderCollapsedByScroll = false
-    @State private var scope: TaskScope = .focus
+    @State private var scope: TaskScope = .all
     @State private var taskToEdit: TaskItem?
     @State private var showCompleted: Bool = false
     @State private var showingClearCompleted: Bool = false
@@ -23,12 +25,22 @@ struct TodayView: View {
     @State private var today: Date = Date.now.startOfDay
 
     init(
+        initialScope: TaskScope = .all,
         isCaptureActive: Binding<Bool> = .constant(false), captureTag: Binding<Tag?> = .constant(nil),
-        captureBottomInset: CGFloat = 88
+        captureBottomInset: CGFloat = 88, showsHeader: Bool = true,
+        canEditTask: @escaping () -> Bool = { true }
     ) {
         self._isCaptureActive = isCaptureActive
         self._captureTag = captureTag
         self.captureBottomInset = captureBottomInset
+        self.showsHeader = showsHeader
+        self.canEditTask = canEditTask
+        self._scope = State(initialValue: initialScope)
+    }
+
+    private func editTask(_ task: TaskItem) {
+        guard canEditTask() else { return }
+        taskToEdit = task
     }
 
     private var scheduledTags: [Tag] {
@@ -44,17 +56,23 @@ struct TodayView: View {
         activeScope.defaultTag(tags: tags, scheduledTags: scheduledTags)
     }
 
+    private var showsTaskFolder: Bool {
+        #if os(macOS)
+        if case .tag = activeScope { return false }
+        return true
+        #else
+        return showsHeader
+        #endif
+    }
+
     private var filteredTasks: [TaskItem] {
         activeScope.filter(allTasks, scheduledTags: scheduledTags)
             .filter { !TaskDeletionManager.shared.isPending($0) }
     }
 
-    private var highPriorityTasks: [TaskItem] {
-        filteredTasks.filter { $0.isHighPriorityToday && !$0.isDone }
-    }
-
-    private var regularTasks: [TaskItem] {
-        filteredTasks.filter { !$0.isHighPriorityToday && !$0.isDone }
+    private var openTasks: [TaskItem] {
+        filteredTasks.filter { !$0.isDone }
+            .sorted { $0.priority.rank > $1.priority.rank }
     }
 
     private var completedTasks: [TaskItem] {
@@ -64,93 +82,51 @@ struct TodayView: View {
     var body: some View {
         KeyboardAnchoredLayout {
             VStack(spacing: 0) {
-                FocusHeroCard(
-                    compact: keyboard.isKeyboardVisible || isHeaderCollapsedByScroll,
-                    collapseAnimation: keyboard.isKeyboardVisible
-                        ? keyboard.transitionAnimation : Theme.Motion.standard,
-                    tags: tags,
-                    scheduledTags: scheduledTags,
-                    scope: $scope,
-                    today: today,
-                    doneCount: completedTasks.count,
-                    totalCount: filteredTasks.count,
-                    openCount: { chipScope in
-                        chipScope.filter(allTasks, scheduledTags: scheduledTags)
-                            .filter { !$0.isDone && !TaskDeletionManager.shared.isPending($0) }.count
-                    }
-                )
-                .zIndex(10)
+                if showsHeader {
+                    FocusHeroCard(
+                        compact: keyboard.isKeyboardVisible || isHeaderCollapsedByScroll,
+                        collapseAnimation: keyboard.isKeyboardVisible
+                            ? keyboard.transitionAnimation : Theme.Motion.standard,
+                        tags: tags,
+                        scheduledTags: scheduledTags,
+                        scope: $scope,
+                        today: today,
+                        doneCount: completedTasks.count,
+                        totalCount: filteredTasks.count,
+                        openCount: { chipScope in
+                            chipScope.filter(allTasks, scheduledTags: scheduledTags)
+                                .filter { !$0.isDone && !TaskDeletionManager.shared.isPending($0) }.count
+                        }
+                    )
+                    .modifier(MediumPriorityDropTarget(tasks: allTasks))
+                    .zIndex(10)
+                }
 
                 ScrollViewReader { scrollProxy in
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 16) {
-                            Color.clear
-                                .frame(height: 1)
-                                .id("top_anchor")
-                                .padding(.bottom, 0)
-
-                            if !highPriorityTasks.isEmpty || !regularTasks.isEmpty {
-                                taskSection(
-                                    title: "Приоритет",
-                                    tasks: highPriorityTasks,
-                                    labelColor: Theme.Colors.textPrimary,
-                                    makeHighPriority: true
-                                )
+                    // Animate membership changes, but let native swipe cells settle without an animated sort.
+                    taskList
+                        .animation(reduceMotion ? nil : Theme.Motion.standard, value: Set(filteredTasks.map(\.id)))
+                        .animation(reduceMotion ? nil : Theme.Motion.standard, value: Set(openTasks.map(\.id)))
+                        .animation(reduceMotion ? nil : Theme.Motion.standard, value: Set(completedTasks.map(\.id)))
+                        .onScrollGeometryChange(for: CGFloat.self) { geometry in
+                            max(0, geometry.contentOffset.y + geometry.contentInsets.top)
+                        } action: { _, offset in
+                            // Keep separate thresholds so the header's height change cannot toggle it back.
+                            if offset > 64 {
+                                isHeaderCollapsedByScroll = true
+                            } else if offset < 8 {
+                                isHeaderCollapsedByScroll = false
                             }
-
-                            if !regularTasks.isEmpty {
-                                taskSection(
-                                    title: "Задачи",
-                                    tasks: regularTasks,
-                                    labelColor: Theme.Colors.textPrimary,
-                                    makeHighPriority: false
-                                )
-                            } else if highPriorityTasks.isEmpty {
-                                emptyState
+                        }
+                        .scrollBounceBehavior(showsHeader ? .always : .basedOnSize, axes: .vertical)
+                        .scrollDismissesKeyboard(.interactively)
+                        .contentMargins(.bottom, captureBottomInset, for: .scrollContent)
+                        .monoScrollEdge()
+                        .onChange(of: scope) { _, _ in
+                            withAnimation(reduceMotion ? nil : Theme.Motion.standard) {
+                                scrollProxy.scrollTo("top_anchor", anchor: .top)
                             }
-
-                            if !completedTasks.isEmpty {
-                                completedSection
-                                    .padding(.top, 12)
-                            }
-
                         }
-                        .padding(.horizontal, Theme.Spacing.screenPadding)
-                        .padding(.bottom, 4)
-                        .animation(reduceMotion ? nil : Theme.Motion.standard, value: filteredTasks.map(\.id))
-                        .animation(reduceMotion ? nil : Theme.Motion.standard, value: highPriorityTasks.map(\.id))
-                        .animation(reduceMotion ? nil : Theme.Motion.standard, value: completedTasks.map(\.id))
-                    }
-                    .refreshable {
-                        do {
-                            try await SupabaseSyncService.shared.sync(context: modelContext)
-                            Haptics.success()
-                        } catch {
-                            print("[TodayView] Pull to refresh failed: \(error)")
-                            Haptics.warning()
-                        }
-                    }
-                    .onScrollGeometryChange(for: CGFloat.self) { geometry in
-                        max(0, geometry.contentOffset.y + geometry.contentInsets.top)
-                    } action: { _, offset in
-                        // Keep separate thresholds so the header's height change cannot toggle it back.
-                        if offset > 64 {
-                            isHeaderCollapsedByScroll = true
-                        } else if offset < 8 {
-                            isHeaderCollapsedByScroll = false
-                        }
-                    }
-                    .scrollBounceBehavior(.always, axes: .vertical)
-                    .scrollDismissesKeyboard(.interactively)
-                    #if os(iOS)
-                    .contentMargins(.bottom, captureBottomInset, for: .scrollContent)
-                    #endif
-                    .monoScrollEdge()
-                    .onChange(of: scope) { _, _ in
-                        withAnimation(reduceMotion ? nil : Theme.Motion.standard) {
-                            scrollProxy.scrollTo("top_anchor", anchor: .top)
-                        }
-                    }
                 }
             }
             .modelContainer(modelContext.container)
@@ -159,11 +135,13 @@ struct TodayView: View {
                 #if os(iOS)
                 EmptyView()
                 #else
-                UndoDeletionToast()
-                FastCaptureBar(
-                    activeTag: activeTag,
-                    isCaptureActive: $isCaptureActive
-                )
+                if showsHeader {
+                    UndoDeletionToast()
+                    FastCaptureBar(
+                        activeTag: activeTag,
+                        isCaptureActive: $isCaptureActive
+                    )
+                }
                 #endif
             }
             .modelContainer(modelContext.container)
@@ -177,9 +155,11 @@ struct TodayView: View {
         .onAppear {
             hideKeyboard()
             captureTag = activeTag
-            if NotificationService.shared.morningNavigationToken != nil { applyMorningScope() }
+            if showsHeader && NotificationService.shared.morningNavigationToken != nil { applyMorningScope() }
         }
-        .onChange(of: NotificationService.shared.morningNavigationToken) { _, _ in applyMorningScope() }
+        .onChange(of: NotificationService.shared.morningNavigationToken) { _, _ in
+            if showsHeader { applyMorningScope() }
+        }
         .onDisappear {
             isCaptureActive = false
             hideKeyboard()
@@ -204,35 +184,66 @@ struct TodayView: View {
         switch NotificationService.shared.preferences.morningScope {
         case "all": scope = .all
         case "priority": scope = .highPriority
-        default: scope = .focus
+        default: scope = .all
         }
+    }
+
+    @ViewBuilder private var taskList: some View {
+        #if os(iOS)
+        List {
+            taskListContent
+                .listRowInsets(
+                    EdgeInsets(
+                        top: 0, leading: Theme.Spacing.screenPadding, bottom: 0, trailing: Theme.Spacing.screenPadding)
+                )
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
+        }
+        .listStyle(.plain)
+        .listRowSpacing(0)
+        .environment(\.defaultMinListRowHeight, 0)
+        .contentMargins(.top, 0, for: .scrollContent)
+        .scrollContentBackground(.hidden)
+        #else
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) { taskListContent }
+                .padding(.horizontal, Theme.Spacing.screenPadding)
+                .padding(.bottom, 4)
+        }
+        #endif
+    }
+
+    @ViewBuilder private var taskListContent: some View {
+        Color.clear.frame(height: 1)
+            .background {
+                if !showsHeader { ScrollBounceDisabler() }
+            }
+            .id("top_anchor")
+        if !openTasks.isEmpty {
+            taskRows
+        } else if showsHeader || !completedTasks.isEmpty {
+            emptyState
+        }
+        if !completedTasks.isEmpty { completedSection }
     }
 
     // MARK: - Sections
 
-    private func taskSection(title: String, tasks: [TaskItem], labelColor: Color, makeHighPriority: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if makeHighPriority {
-                PrioritySectionTitle(count: tasks.count, color: labelColor) { id in
-                    withAnimation(reduceMotion ? nil : Theme.Motion.standard) {
-                        modelContext.prioritizeTask(
-                            id, in: allTasks.filter { !TaskDeletionManager.shared.isPending($0) })
-                    }
-                }
-                .padding(.bottom, 6)
-            } else {
-                SectionTitle(text: title, count: tasks.count, color: labelColor)
-                    .padding(.bottom, 6)
-            }
-
-            ForEach(tasks) { task in
+    private var taskRows: some View {
+        TaskSectionContainer {
+            ForEach(openTasks.map { TaskListEntry(task: $0, completed: false) }) { entry in
+                let task = entry.task
                 TaskRowView(
                     task: task,
                     allTags: tags,
+                    showsTag: showsTaskFolder,
                     isTargeted: targetedTaskId == task.id,
-                    onEdit: { taskToEdit = $0 }
+                    onEdit: editTask
                 )
-                .transition(reduceMotion ? .opacity : .opacity.combined(with: .offset(y: 6)))
+                .overlay(alignment: .bottom) {
+                    TaskRowSeparator()
+                }
+                .listRowInsets(EdgeInsets(top: 0, leading: Theme.Spacing.screenPadding, bottom: 0, trailing: 0))
                 .dropDestination(for: String.self) { items, _ in
                     targetedTaskId = nil
                     guard let rawId = items.first,
@@ -244,7 +255,7 @@ struct TodayView: View {
                         modelContext.reorderTask(
                             sourceId, onto: task.id,
                             in: allTasks.filter { !TaskDeletionManager.shared.isPending($0) },
-                            highPriority: makeHighPriority)
+                            highPriority: nil)
                     }
                     return true
                 } isTargeted: { targeted in
@@ -258,8 +269,8 @@ struct TodayView: View {
     }
 
     private var completedSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline) {
+        TaskSectionContainer {
+            HStack {
                 Button {
                     Haptics.selection()
                     withAnimation(reduceMotion ? nil : Theme.Motion.standard) {
@@ -284,27 +295,31 @@ struct TodayView: View {
                     Haptics.selection()
                     showingClearCompleted = true
                 } label: {
-                    Text("Очистить")
-                        .font(Theme.Typography.caption)
-                        .tracking(0.6)
-                        .foregroundColor(Theme.Colors.textSecondary)
-                        .padding(.horizontal, 10)
-                        .frame(height: 24)
-                        .overlay(Capsule().strokeBorder(Theme.Colors.ruleStrong, lineWidth: 1))
-                        .frame(minHeight: 44)
+                    Image(systemName: "trash")
+                        .font(Theme.Typography.callout)
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                        .frame(width: Theme.Spacing.touchTargetMin, height: Theme.Spacing.touchTargetMin)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(FullSurfaceButtonStyle())
+                .accessibilityLabel("Очистить выполненные")
             }
             .padding(.bottom, 6)
+            .padding(.top, 20)
 
             if showCompleted {
-                ForEach(completedTasks) { task in
+                ForEach(completedTasks.map { TaskListEntry(task: $0, completed: true) }) { entry in
+                    let task = entry.task
                     TaskRowView(
                         task: task,
                         allTags: tags,
-                        onEdit: { taskToEdit = $0 }
+                        showsTag: showsTaskFolder,
+                        onEdit: editTask
                     )
+                    .overlay(alignment: .bottom) {
+                        TaskRowSeparator()
+                    }
+                    .listRowInsets(EdgeInsets(top: 0, leading: Theme.Spacing.screenPadding, bottom: 0, trailing: 0))
                 }
             }
         }
@@ -318,7 +333,7 @@ struct TodayView: View {
 
             Text(
                 completedTasks.isEmpty
-                    ? "В этом списке нет задач. Нажмите «+», чтобы добавить первую."
+                    ? "В этом списке нет задач. Добавьте первую через строку ввода."
                     : "Открытых задач в этом списке не осталось."
             )
             .font(Theme.Typography.callout)
@@ -330,6 +345,108 @@ struct TodayView: View {
     }
 }
 
+/// Native List flattens both ForEach groups. A task that changes section or priority
+/// needs a fresh cell so the system swipe state cannot follow the old position.
+private struct TaskListEntry: Identifiable {
+    let task: TaskItem
+    let id: String
+
+    init(task: TaskItem, completed: Bool) {
+        self.task = task
+        id = completed ? "completed-\(task.id)" : "open-\(task.id)-\(task.priority.rawValue)"
+    }
+}
+
+/// iOS must expose every task as a real List row for system swipe actions.
+private struct TaskSectionContainer<Content: View>: View {
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        #if os(iOS)
+        content
+        #else
+        VStack(alignment: .leading, spacing: 0) { content }
+        #endif
+    }
+}
+
 #Preview {
     TodayView()
+}
+
+/// Lives inside scroll content so only the containing folder stops rubber-banding.
+struct ScrollBounceDisabler: View {
+    var body: some View {
+        #if os(iOS)
+        ScrollBounceDisablerBridge()
+        #else
+        EmptyView()
+        #endif
+    }
+}
+
+#if os(iOS)
+import UIKit
+
+private struct ScrollBounceDisablerBridge: UIViewRepresentable {
+    func makeUIView(context: Context) -> MarkerView {
+        let view = MarkerView()
+        view.isUserInteractionEnabled = false
+        return view
+    }
+
+    func updateUIView(_ uiView: MarkerView, context: Context) {
+        uiView.disableBounce()
+    }
+
+    final class MarkerView: UIView {
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            disableBounce()
+        }
+
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            disableBounce()
+        }
+
+        func disableBounce() {
+            var ancestor = superview
+            while let view = ancestor {
+                if let scrollView = view as? UIScrollView {
+                    scrollView.bounces = false
+                    scrollView.alwaysBounceVertical = false
+                    return
+                }
+                ancestor = view.superview
+            }
+        }
+    }
+}
+#endif
+
+/// The existing header is the upward drop destination, without adding an idle drop zone.
+struct MediumPriorityDropTarget: ViewModifier {
+    @Environment(\.modelContext) private var modelContext
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let tasks: [TaskItem]
+    @State private var isTargeted = false
+
+    func body(content: Content) -> some View {
+        content
+            .contentShape(Rectangle())
+            .background(isTargeted ? Priority.medium.color.opacity(0.12) : Color.clear)
+            .accessibilityIdentifier("priority-drop-target")
+            .dropDestination(for: String.self) { items, _ in
+                guard let value = items.first, let id = UUID(uuidString: value) else { return false }
+                var accepted = false
+                withAnimation(reduceMotion ? nil : Theme.Motion.standard) {
+                    accepted = modelContext.prioritizeTask(id, in: tasks)
+                }
+                if accepted { Haptics.selection() }
+                return accepted
+            } isTargeted: {
+                isTargeted = $0
+            }
+    }
 }

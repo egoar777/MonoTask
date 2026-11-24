@@ -2,10 +2,23 @@ import SwiftUI
 
 struct SharedListDetailView: View {
     let listID: UUID
+    var folderLayout = false
+    @Binding var isCaptureActive: Bool
+    private let canEditTask: () -> Bool
     @State private var store = SharedListStore.shared
     @State private var editingTask: SharedTask?
     @State private var managing = false
     private var list: SharedList? { store.lists.first { $0.id == listID } }
+
+    init(
+        listID: UUID, folderLayout: Bool = false, isCaptureActive: Binding<Bool> = .constant(false),
+        canEditTask: @escaping () -> Bool = { true }
+    ) {
+        self.listID = listID
+        self.folderLayout = folderLayout
+        self._isCaptureActive = isCaptureActive
+        self.canEditTask = canEditTask
+    }
 
     var body: some View {
         Group {
@@ -13,18 +26,21 @@ struct SharedListDetailView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 12) {
                         let tasks = store.tasks(in: listID)
-                        ScreenHeading(text: list.title).padding(.top, -24)
-                        Label("Участников: \(store.members(in: listID).count)", systemImage: "person.2")
-                            .font(Theme.Typography.caption).foregroundStyle(Theme.Colors.textSecondary)
-                        VStack(spacing: 8) {
-                            HStack {
-                                Text("Выполнено \(tasks.filter(\.isDone).count) из \(tasks.count)")
-                                Spacer()
-                            }.font(Theme.Typography.caption)
-                            ProgressLine(
-                                progress: tasks.isEmpty ? 0 : Double(tasks.filter(\.isDone).count) / Double(tasks.count)
-                            )
-                        }.padding(.vertical, 8)
+                        if !folderLayout {
+                            ScreenHeading(text: list.title).padding(.top, -24)
+                            Label("Участников: \(store.members(in: listID).count)", systemImage: "person.2")
+                                .font(Theme.Typography.caption).foregroundStyle(Theme.Colors.textSecondary)
+                            VStack(spacing: 8) {
+                                HStack {
+                                    Text("Выполнено \(tasks.filter(\.isDone).count) из \(tasks.count)")
+                                    Spacer()
+                                }.font(Theme.Typography.caption)
+                                ProgressLine(
+                                    progress: tasks.isEmpty
+                                        ? 0 : Double(tasks.filter(\.isDone).count) / Double(tasks.count)
+                                )
+                            }.padding(.vertical, 8)
+                        }
                         if let message = store.errorMessage {
                             Text(message).font(Theme.Typography.callout).foregroundStyle(Theme.Colors.textSecondary)
                         }
@@ -33,23 +49,48 @@ struct SharedListDetailView: View {
                                 .foregroundStyle(Theme.Colors.textSecondary)
                         }
                         ForEach(store.conflicts(in: listID), id: \.task.id) { edit in conflictCard(edit) }
-                        if tasks.isEmpty {
+                        if tasks.isEmpty && !folderLayout {
                             ContentUnavailableView(
-                                "В списке нет задач", systemImage: "checklist",
+                                "В папке нет задач", systemImage: "checklist",
                                 description: Text("Добавьте первую задачу — её увидят все участники."))
                         }
-                        if !tasks.isEmpty { SectionTitle(text: "Задачи").padding(.top, 8) }
-                        ForEach(tasks) { task in taskRow(task) }
-                        Button {
-                            editingTask = SharedTask(listID: listID, title: "")
-                        } label: {
-                            Label("Новая задача", systemImage: "plus").frame(maxWidth: .infinity, minHeight: 52)
+                        let open = tasks.filter { !$0.isDone }
+                            .sorted { ($0.isHighPriority ? 1 : 0) > ($1.isHighPriority ? 1 : 0) }
+                        let completed = tasks.filter(\.isDone)
+                        VStack(spacing: 0) {
+                            ForEach(open) { task in
+                                taskRow(task)
+                                    .overlay(alignment: .bottom) {
+                                        TaskRowSeparator(leadingInset: 48, trailingInset: 0)
+                                    }
+                            }
                         }
-                        .buttonStyle(FullSurfaceButtonStyle()).modifier(FloatingGlass(shape: Capsule()))
-                        .accessibilityIdentifier("shared-add-task")
+                        if !completed.isEmpty {
+                            SectionTitle(text: "Выполнено", count: completed.count).padding(.top, 8)
+                            VStack(spacing: 0) {
+                                ForEach(completed) { task in
+                                    taskRow(task)
+                                        .overlay(alignment: .bottom) {
+                                            TaskRowSeparator(leadingInset: 48, trailingInset: 0)
+                                        }
+                                }
+                            }
+                        }
+                        if !folderLayout {
+                            ClassicInlineTaskInput(isCaptureActive: $isCaptureActive) { title, highPriority in
+                                guard store.accountID != nil else { return false }
+                                var task = SharedTask(listID: listID, title: title)
+                                task.isHighPriority = highPriority
+                                store.save(task)
+                                Task { await store.sync() }
+                                return true
+                            }
+                        }
                     }.padding(20).frame(maxWidth: 760).frame(maxWidth: .infinity)
+                        .background {
+                            if folderLayout { ScrollBounceDisabler() }
+                        }
                 }
-                .refreshable { await store.sync() }
                 .background(Theme.Colors.background)
                 .navigationTitle("")
                 .toolbar {
@@ -67,7 +108,7 @@ struct SharedListDetailView: View {
             } else {
                 ContentUnavailableView(
                     "Список недоступен", systemImage: "person.crop.circle.badge.xmark",
-                    description: Text("Список удалён или доступ к нему закрыт."))
+                    description: Text("Папка удалена или доступ к ней закрыт."))
             }
         }
         .foregroundStyle(Theme.Colors.textPrimary)
@@ -77,48 +118,9 @@ struct SharedListDetailView: View {
     }
 
     private func taskRow(_ task: SharedTask) -> some View {
-        GroupCard(padding: 8) {
-            HStack(spacing: 4) {
-                Button {
-                    var edited = task
-                    edited.isDone.toggle()
-                    store.save(edited)
-                    Haptics.selection()
-                    Task { await store.sync() }
-                } label: {
-                    TaskCheckbox(isDone: task.isDone).frame(width: 44, height: 44)
-                }.buttonStyle(FullSurfaceButtonStyle()).accessibilityLabel(
-                    task.isDone ? "Вернуть общую задачу" : "Выполнить общую задачу")
-                Button {
-                    editingTask = task
-                } label: {
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack(spacing: 6) {
-                            if task.isHighPriority {
-                                Image(systemName: "flag.fill").foregroundStyle(Theme.Colors.priority)
-                            }
-                            Text(task.title).font(Theme.Typography.body).strikethrough(task.isDone)
-                                .foregroundStyle(task.isDone ? Theme.Colors.textMuted : Theme.Colors.textPrimary)
-                        }
-                        if !task.notes.isEmpty {
-                            Text(task.notes).font(Theme.Typography.caption).foregroundStyle(Theme.Colors.textSecondary)
-                                .lineLimit(2)
-                        }
-                        HStack(spacing: 10) {
-                            if let member = store.members(in: listID).first(where: { $0.userID == task.assigneeID }) {
-                                Label(
-                                    member.userID == store.accountID ? "Вы" : member.displayName, systemImage: "person")
-                            } else {
-                                Text("Без ответственного")
-                            }
-                            if !task.subtasks.isEmpty {
-                                Text("\(task.subtasks.filter(\.isDone).count)/\(task.subtasks.count) подзадач")
-                            }
-                        }.font(Theme.Typography.caption).foregroundStyle(Theme.Colors.textMuted)
-                    }.padding(.vertical, 8).padding(.trailing, 6)
-                        .frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
-                }.buttonStyle(FullSurfaceButtonStyle()).accessibilityIdentifier("shared-task-\(task.id)")
-            }
+        SharedTaskRow(task: task, store: store) {
+            guard canEditTask() else { return }
+            editingTask = task
         }
     }
 
@@ -193,7 +195,9 @@ struct SharedTaskEditor: View {
                 Section("Подзадачи") {
                     ForEach($draft.subtasks) { $subtask in
                         HStack {
-                            Toggle("Выполнить подзадачу", isOn: $subtask.isDone).labelsHidden().frame(width: 44)
+                            Toggle("Выполнить подзадачу", isOn: $subtask.isDone)
+                                .labelsHidden()
+                                .fixedSize()
                             TextField("Подзадача", text: $subtask.title)
                             Button {
                                 draft.subtasks.removeAll { $0.id == subtask.id }
@@ -221,20 +225,27 @@ struct SharedTaskEditor: View {
                     Section { Button("Удалить общую задачу", role: .destructive) { deleting = true } }
                 }
                 Section {
-                    Text("Заметки, подзадачи и статус видны всем участникам этого списка.").foregroundStyle(
+                    Text("Заметки, подзадачи и статус видны всем участникам этой папки.").foregroundStyle(
                         Theme.Colors.textSecondary)
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(Theme.Colors.background)
+            .toggleStyle(.switch)
             .navigationTitle(draft.revision == 0 ? "Новая задача" : "Общая задача")
+            #if os(macOS)
+            .macNavigationHeader {
+                Button("Отмена") { dismiss() }
+                .keyboardShortcut(.cancelAction)
+                Spacer()
+                saveButton
+            }
+            #else
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Отмена") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Сохранить") {
-                        store.save(draft); Task { await store.sync() }; dismiss()
-                    }
-                    .disabled(!valid).accessibilityIdentifier("shared-save-task")
-                }
+                ToolbarItem(placement: .confirmationAction) { saveButton }
             }
+            #endif
             .confirmationDialog(
                 "Удалить задачу для всех участников?", isPresented: $deleting, titleVisibility: .visible
             ) {
@@ -251,5 +262,85 @@ struct SharedTaskEditor: View {
         #if os(macOS)
         .frame(minWidth: 560, idealWidth: 620, minHeight: 580)
         #endif
+    }
+
+    private var saveButton: some View {
+        Button("Сохранить") {
+            store.save(draft)
+            Task { await store.sync() }
+            dismiss()
+        }
+        .disabled(!valid)
+        .accessibilityIdentifier("shared-save-task")
+    }
+}
+
+private struct SharedTaskRow: View {
+    let task: SharedTask
+    let store: SharedListStore
+    let onEdit: () -> Void
+
+    private var textExpansion = TaskTextExpansion()
+
+    var body: some View {
+        Group {
+            HStack(spacing: 4) {
+                Button {
+                    var edited = task
+                    edited.isDone.toggle()
+                    store.save(edited)
+                    Haptics.selection()
+                    Task { await store.sync() }
+                } label: {
+                    TaskCheckbox(
+                        isDone: task.isDone,
+                        priorityColor: task.isHighPriority ? Priority.high.color : nil
+                    ).frame(width: 44, height: 44)
+                }.buttonStyle(FullSurfaceButtonStyle()).accessibilityLabel(
+                    task.isDone ? "Вернуть общую задачу" : "Выполнить общую задачу"
+                )
+                .accessibilityValue(task.isHighPriority && !task.isDone ? "Высокий приоритет" : "")
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    taskDetails
+                }
+                .padding(.vertical, 8)
+                .padding(.trailing, 6)
+            }
+        }
+    }
+
+    private var taskDetails: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                TaskPreviewText(lineLimit: 2, expansion: textExpansion.presentation) {
+                    Text(task.title).font(Theme.Typography.body).strikethrough(task.isDone)
+                        .foregroundStyle(task.isDone ? Theme.Colors.textMuted : Theme.Colors.textPrimary)
+                }
+            }
+            if !task.notes.isEmpty {
+                TaskPreviewText(lineLimit: 2, expansion: textExpansion.presentation) {
+                    Text(task.notes).font(Theme.Typography.caption).foregroundStyle(Theme.Colors.textSecondary)
+                }
+            }
+            HStack(spacing: 10) {
+                if let member = store.members(in: task.listID).first(where: { $0.userID == task.assigneeID }) {
+                    Label(
+                        member.userID == store.accountID ? "Вы" : member.displayName, systemImage: "person")
+                } else {
+                    Text("Без ответственного")
+                }
+                if !task.subtasks.isEmpty {
+                    Text("\(task.subtasks.filter(\.isDone).count)/\(task.subtasks.count) подзадач")
+                }
+            }.font(Theme.Typography.caption).foregroundStyle(Theme.Colors.textMuted)
+            if textExpansion.isExpanded {
+                TaskTextCollapseButton(expansion: textExpansion.presentation)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onEdit)
+        .accessibilityIdentifier("shared-task-\(task.id)")
     }
 }

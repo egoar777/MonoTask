@@ -72,8 +72,9 @@ extension Date {
 
 // Compact list metadata; full dates remain available in the task editor.
 extension Date {
-    var taskReminderLabel: String {
+    func taskReminderLabel(repeatsDaily: Bool) -> String {
         let time = formatted(.dateTime.hour().minute().locale(Locale(identifier: "ru_RU")))
+        if repeatsDaily { return "Ежедневно, " + time }
         if Calendar.current.isDateInToday(self) { return "Сегодня, " + time }
         if Calendar.current.isDateInTomorrow(self) { return "Завтра, " + time }
         return formatted(.dateTime.day().month(.abbreviated).hour().minute().locale(Locale(identifier: "ru_RU")))

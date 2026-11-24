@@ -44,12 +44,9 @@ struct MacTaskListView: View {
             .filter { !TaskDeletionManager.shared.isPending($0) }
     }
 
-    private var highPriorityTasks: [TaskItem] {
-        filteredTasks.filter { $0.isHighPriorityToday && !$0.isDone }
-    }
-
-    private var regularTasks: [TaskItem] {
-        filteredTasks.filter { !$0.isHighPriorityToday && !$0.isDone }
+    private var openTasks: [TaskItem] {
+        filteredTasks.filter { !$0.isDone }
+            .sorted { $0.priority.rank > $1.priority.rank }
     }
 
     private var completedTasks: [TaskItem] {
@@ -66,19 +63,16 @@ struct MacTaskListView: View {
                 header
                 captureBar
 
-                if !highPriorityTasks.isEmpty || !regularTasks.isEmpty {
-                    section(
-                        title: "Приоритет", tasks: highPriorityTasks, color: Theme.Colors.priority, highPriority: true)
-                }
-
-                if !regularTasks.isEmpty {
-                    section(
-                        title: "Задачи",
-                        tasks: regularTasks,
-                        color: Theme.Colors.textMuted,
-                        highPriority: scope == .highPriority ? nil : false
-                    )
-                } else if highPriorityTasks.isEmpty {
+                if !openTasks.isEmpty {
+                    VStack(spacing: 0) {
+                        ForEach(openTasks) { task in
+                            row(task, highPriority: nil)
+                                .overlay(alignment: .bottom) {
+                                    TaskRowSeparator()
+                                }
+                        }
+                    }
+                } else {
                     emptyState
                 }
 
@@ -91,9 +85,9 @@ struct MacTaskListView: View {
             .padding(.bottom, 48)
             .frame(maxWidth: 780)
             .frame(maxWidth: .infinity)
-            .animation(reduceMotion ? nil : Theme.Motion.standard, value: filteredTasks.map(\.id))
-            .animation(reduceMotion ? nil : Theme.Motion.standard, value: highPriorityTasks.map(\.id))
-            .animation(reduceMotion ? nil : Theme.Motion.standard, value: completedTasks.map(\.id))
+            .animation(reduceMotion ? nil : Theme.Motion.standard, value: Set(filteredTasks.map(\.id)))
+            .animation(reduceMotion ? nil : Theme.Motion.standard, value: Set(openTasks.map(\.id)))
+            .animation(reduceMotion ? nil : Theme.Motion.standard, value: Set(completedTasks.map(\.id)))
         }
         .background(Theme.Colors.background.ignoresSafeArea())
         .navigationTitle(scope.title(tags: tags))
@@ -177,9 +171,9 @@ struct MacTaskListView: View {
         case .focus:
             if scheduledTags.isEmpty { return nil }
             return scheduledTags.map(\.name).joined(separator: " · ")
-        case .all: return "Все категории"
-        case .highPriority: return "Только срочное"
-        case .tag: return "Одна категория"
+        case .all: return "Все папки"
+        case .highPriority: return "Высокий и средний приоритет"
+        case .tag: return "Одна папка"
         }
     }
 
@@ -231,27 +225,6 @@ struct MacTaskListView: View {
 
     // MARK: - Sections
 
-    private func section(title: String, tasks: [TaskItem], color: Color, highPriority: Bool?) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if highPriority == true {
-                PrioritySectionTitle(count: tasks.count, color: color) { id in
-                    withAnimation(reduceMotion ? nil : Theme.Motion.standard) {
-                        modelContext.prioritizeTask(
-                            id, in: allTasks.filter { !TaskDeletionManager.shared.isPending($0) })
-                    }
-                }
-                .padding(.bottom, 6)
-            } else {
-                SectionTitle(text: title, count: tasks.count, color: color)
-                    .padding(.bottom, 6)
-            }
-
-            ForEach(tasks) { task in
-                row(task, highPriority: highPriority)
-            }
-        }
-    }
-
     private var completedSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             Button {
@@ -274,6 +247,9 @@ struct MacTaskListView: View {
             if showCompleted {
                 ForEach(completedTasks) { task in
                     row(task, highPriority: nil)
+                        .overlay(alignment: .bottom) {
+                            TaskRowSeparator()
+                        }
                 }
             }
         }
@@ -311,12 +287,12 @@ struct MacTaskListView: View {
                 let sourceId = UUID(uuidString: rawId),
                 sourceId != task.id
             else { return false }
-            withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+            withAnimation(reduceMotion ? nil : Theme.Motion.quick) {
                 modelContext.reorderTask(sourceId, onto: task.id, in: allTasks, highPriority: highPriority)
             }
             return true
         } isTargeted: { targeted in
-            withAnimation(.easeInOut(duration: 0.15)) {
+            withAnimation(reduceMotion ? nil : Theme.Motion.quick) {
                 targetedTaskId = targeted ? task.id : (targetedTaskId == task.id ? nil : targetedTaskId)
             }
         }
@@ -363,6 +339,7 @@ struct MacTaskRowItem: View {
     @AppStorage("monotask_compact_rows") private var compactRows = false
     @State private var completing = false
     @State private var isHovered: Bool = false
+    private var textExpansion = TaskTextExpansion()
 
     var body: some View {
         HStack(alignment: .center, spacing: 8) {
@@ -371,7 +348,7 @@ struct MacTaskRowItem: View {
                 if task.isDone || reduceMotion {
                     onToggleDone()
                 } else {
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) { completing = true }
+                    withAnimation(reduceMotion ? nil : Theme.Motion.quick) { completing = true }
                     Task { @MainActor in
                         try? await Task.sleep(for: .milliseconds(180))
                         guard task.modelContext != nil else { return }
@@ -380,63 +357,78 @@ struct MacTaskRowItem: View {
                     }
                 }
             } label: {
-                TaskCheckbox(isDone: task.isDone || completing, size: 19)
-                    .scaleEffect(completing ? 1.14 : 1)
+                TaskCheckbox(
+                    isDone: task.isDone || completing, size: 19,
+                    priorityColor: task.priority == .none ? nil : task.priority.color
+                )
+                    .scaleEffect(completing ? 0.98 : 1)
                     .frame(width: 30, height: 30)
                     .contentShape(Rectangle())
             }
             .buttonStyle(FullSurfaceButtonStyle())
             .help(task.isDone ? "Вернуть в работу" : "Отметить выполненной")
+            .accessibilityValue(task.isDone ? "" : task.priority.title)
 
-            Button {
-                onEdit(task)
-            } label: {
-                HStack(spacing: 12) {
-                    Text(task.title)
-                        .font(.system(size: 15))
-                        .tracking(-0.2)
-                        .strikethrough(task.isDone, color: Theme.Colors.textMuted)
-                        .foregroundColor(task.isDone ? Theme.Colors.textMuted : Theme.Colors.textPrimary)
-                        .lineLimit(2)
-
-                    Spacer(minLength: 12)
-
-                    if let date = task.dueDate, !task.isDone {
-                        Label(date.taskReminderLabel, systemImage: "calendar")
-                            .font(Theme.Typography.caption)
-                            .foregroundStyle(date < .now ? Theme.Colors.warning : Theme.Colors.textSecondary)
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    TaskPreviewText(
+                        lineLimit: 2, expansion: textExpansion.presentation,
+                        expandedTrailingInset: TaskTextCollapseAccessory.textInset
+                    ) {
+                        Text(task.title)
+                            .font(.system(size: 15))
+                            .tracking(0)
+                            .strikethrough(task.isDone, color: Theme.Colors.textMuted)
+                            .foregroundColor(task.isDone ? Theme.Colors.textMuted : Theme.Colors.textPrimary)
                     }
                     if showNotes && !task.notes.isEmpty {
-                        Image(systemName: "text.alignleft")
-                            .font(.system(size: 10))
-                            .foregroundColor(Theme.Colors.textMuted)
-                    }
-
-                    if task.hasSubtasks {
-                        let allDone = task.completedSubtasksCount == task.subtasksCount
-                        Text("\(task.completedSubtasksCount)/\(task.subtasksCount)")
-                            .font(Theme.Typography.numeric(11))
-                            .foregroundColor(allDone && !task.isDone ? Theme.Colors.accent : Theme.Colors.textMuted)
-                    }
-
-                    if task.isHighPriorityToday && !task.isDone {
-                        Image(systemName: "flag.fill").font(.caption).foregroundStyle(Theme.Colors.priority)
-                    }
-                    if showsTag, let tag = task.tags.first {
-                        HStack(spacing: 5) {
-                            Circle()
-                                .fill(task.isDone ? Theme.Colors.textMuted : tag.color)
-                                .frame(width: 6, height: 6)
-                            Text(tag.name)
-                                .font(.system(size: 12))
-                                .foregroundColor(Theme.Colors.textSecondary)
-                                .lineLimit(1)
+                        TaskPreviewText(
+                            lineLimit: 1, expansion: textExpansion.presentation,
+                            expandedTrailingInset: TaskTextCollapseAccessory.textInset
+                        ) {
+                            Text(task.notes).font(Theme.Typography.caption)
+                                .foregroundStyle(Theme.Colors.textSecondary)
                         }
                     }
                 }
-                .contentShape(Rectangle())
+                .modifier(TaskTextCollapseAccessory(expansion: textExpansion.presentation))
+
+                Spacer(minLength: 12)
+
+                if let date = task.dueDate, !task.isDone {
+                    Label(date.taskReminderLabel(repeatsDaily: task.repeatsReminderDaily), systemImage: "calendar")
+                        .font(Theme.Typography.caption)
+                        .foregroundStyle(
+                            !task.repeatsReminderDaily && date < .now
+                                ? Theme.Colors.warning : Theme.Colors.textSecondary)
+                }
+                if showNotes && !task.notes.isEmpty {
+                    Image(systemName: "text.alignleft")
+                        .font(.system(size: 10))
+                        .foregroundColor(Theme.Colors.textMuted)
+                }
+
+                if task.hasSubtasks {
+                    let allDone = task.completedSubtasksCount == task.subtasksCount
+                    Text("\(task.completedSubtasksCount)/\(task.subtasksCount)")
+                        .font(Theme.Typography.numeric(11))
+                        .foregroundColor(allDone && !task.isDone ? Theme.Colors.accent : Theme.Colors.textMuted)
+                }
+
+                if showsTag, let tag = task.tags.first {
+                    HStack(spacing: 5) {
+                        Circle()
+                            .fill(task.isDone ? Theme.Colors.textMuted : tag.color)
+                            .frame(width: 6, height: 6)
+                        Text(tag.name)
+                            .font(.system(size: 12))
+                            .foregroundColor(Theme.Colors.textSecondary)
+                            .lineLimit(1)
+                    }
+                }
             }
-            .buttonStyle(FullSurfaceButtonStyle())
+            .contentShape(Rectangle())
+            .onTapGesture { onEdit(task) }
         }
         .padding(.vertical, compactRows ? 6 : 10)
         .padding(.horizontal, 10)
@@ -445,7 +437,7 @@ struct MacTaskRowItem: View {
                 .fill(
                     isTargeted
                         ? Theme.Colors.surfaceInteractive
-                        : (isHovered ? Theme.Colors.surfaceElevated : Theme.Colors.surface))
+                        : (isHovered ? Theme.Colors.surfaceElevated : Color.clear))
         )
         .onHover { isHovered = $0 }
         .draggable(task.id.uuidString) {

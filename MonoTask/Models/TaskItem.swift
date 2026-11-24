@@ -13,6 +13,10 @@ final class TaskItem {
     var createdAt: Date = Date.now
     var completedAt: Date?
     var dueDate: Date?
+    var repeatsReminderDaily: Bool = false
+    // Preserve the current app's stored reminder fields when comparing the classic UI.
+    var reminderMinutesBefore: Int? = 0
+    var reminderSyncPending: Bool = false
     var sortOrder: Int = 0
     var updatedAt: Date = Date.now
 
@@ -41,7 +45,7 @@ final class TaskItem {
         self.notes = notes
         self.bucketRaw = bucket.rawValue
         self.priorityRaw = priority.rawValue
-        self.isHighPriorityToday = isHighPriorityToday
+        self.isHighPriorityToday = isHighPriorityToday || priority == .high
         self.createdAt = Date.now
         self.updatedAt = Date.now
         self.serverUpdatedAt = nil
@@ -73,12 +77,21 @@ final class TaskItem {
     }
 
     var priority: Priority {
-        get { Priority(rawValue: priorityRaw) ?? .none }
+        get {
+            let stored = Priority(rawValue: priorityRaw) ?? .none
+            return isHighPriorityToday ? .high : stored
+        }
         set {
             priorityRaw = newValue.rawValue
+            isHighPriorityToday = newValue == .high
             updatedAt = Date.now
             isPendingOfflineSync = true
         }
+    }
+
+    /// Both visible priority levels belong to the priority section.
+    var isPriority: Bool {
+        priority == .high || priority == .medium
     }
 
     var isDone: Bool {

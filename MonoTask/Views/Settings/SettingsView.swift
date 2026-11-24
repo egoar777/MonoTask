@@ -2,24 +2,28 @@ import SwiftUI
 import SwiftData
 
 private enum SettingsPage: String, Hashable {
-    case categories = "Категории и расписание"
+    case categories = "Папки"
     case notifications = "Уведомления"
+    case calendars = "Календари"
     case appearance = "Вид списка задач"
     case account = "Аккаунт и синхронизация"
 }
 
 struct SettingsView: View {
+    var bottomContentMargin: CGFloat = 0
     @Query(sort: [SortDescriptor(\Tag.sortOrder), SortDescriptor(\Tag.createdAt)]) private var tags: [Tag]
     @Query private var tasks: [TaskItem]
     @Environment(\.modelContext) private var context
     @Environment(AuthManager.self) private var auth
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var notifications = NotificationService.shared
     @State private var editingTag: Tag?
     @State private var addingTag = false
     @State private var deletingTag: Tag?
     @State private var confirmingSignOut = false
+    @State private var showsAppearancePreview = false
     @AppStorage("monotask_show_task_notes") private var showNotes = true
     @AppStorage("monotask_compact_rows") private var compactRows = false
     @State private var path: [SettingsPage] = []
@@ -27,51 +31,22 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack(path: $path) {
             ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
-                    ScreenHeading(text: "НАСТРОЙКИ")
-                    accountPreview
-                    GroupCard {
-                        Button {
-                            SharedListStore.shared.isPresented = true
-                        } label: {
-                            Label("Общие списки", systemImage: "person.2")
-                                .font(Theme.Typography.body)
-                                .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
-                                .padding(.horizontal, 18)
-                        }.buttonStyle(FullSurfaceButtonStyle()).accessibilityIdentifier("settings-shared-lists")
-                    }
-                    schedulePreview
-                    VStack(alignment: .leading, spacing: 10) {
-                        GroupCard {
-                            destination(
-                                .notifications, icon: "bell", subtitle: morningSummary,
-                                badge: notificationStatus)
-                            Hairline(leading: 58)
-                            destination(.appearance, icon: "list.bullet.rectangle", subtitle: appearanceSummary)
-                        }
-                    }
-                    HStack {
-                        Text("MONOTASK").font(Theme.Typography.heading(12))
-                        Spacer()
-                        Text("Версия \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0")")
-                            .font(Theme.Typography.eyebrow)
-                    }
-                    .foregroundStyle(Theme.Colors.textMuted)
-                    .padding(.top, 4)
-                }
-                .padding(.horizontal, 20).padding(.bottom, 20)
-                .frame(maxWidth: 700)
-                .frame(maxWidth: .infinity)
+                overview
+            }
+            .refreshable {
+                await SharedListStore.shared.sync()
+                try? await SupabaseSyncService.shared.sync(context: context)
             }
             .background(Theme.Colors.background)
             .monoScrollEdge()
             .navigationDestination(for: SettingsPage.self) { page in
                 ScrollView {
                     VStack(alignment: .leading, spacing: 20) {
-                        CurrentDateLabel()
+                        MonoBrandTitle(text: page.rawValue)
                         switch page {
                         case .categories: categories
-                        case .notifications: NotificationPreferencesView()
+                        case .notifications: NotificationPreferencesView(showsCalendars: false)
+                        case .calendars: NotificationPreferencesView(showsNotifications: false)
                         case .appearance: appearance
                         case .account: account
                         }
@@ -81,12 +56,21 @@ struct SettingsView: View {
                     .frame(maxWidth: .infinity)
                 }
                 .background(Theme.Colors.background)
-                .navigationTitle(page.rawValue)
                 #if os(iOS)
                 .navigationBarTitleDisplayMode(.inline)
+                #else
+                .navigationTitle(page.rawValue)
+                .navigationBarBackButtonHidden()
+                .macNavigationHeader(maxWidth: 700) {
+                    Button("Назад", systemImage: "chevron.left") {
+                        if !path.isEmpty { path.removeLast() }
+                    }
+                    .accessibilityIdentifier("settings-back")
+                }
                 #endif
             }
         }
+        .contentMargins(.bottom, bottomContentMargin, for: .scrollContent)
         .tint(Theme.Colors.accent)
         .preferredColorScheme(.dark)
         .task { await notifications.checkAuthorization() }
@@ -96,7 +80,7 @@ struct SettingsView: View {
         .sheet(item: $editingTag) { TagEditSheet(tagToEdit: $0) }
         .sheet(isPresented: $addingTag) { TagEditSheet(tagToEdit: nil) }
         .confirmationDialog(
-            "Удалить категорию «\(deletingTag?.name ?? "")»?",
+            "Удалить папку «\(deletingTag?.name ?? "")»?",
             isPresented: Binding(get: { deletingTag != nil }, set: { if !$0 { deletingTag = nil } }),
             titleVisibility: .visible
         ) {
@@ -105,7 +89,7 @@ struct SettingsView: View {
                 deletingTag = nil
             }
         } message: {
-            Text("Задачи останутся, но потеряют эту категорию.")
+            Text("Задачи останутся без этой папки.")
         }
         .confirmationDialog("Выйти из аккаунта?", isPresented: $confirmingSignOut, titleVisibility: .visible) {
             Button("Выйти", role: .destructive) {
@@ -117,6 +101,7 @@ struct SettingsView: View {
             #if DEBUG
             if ProcessInfo.processInfo.arguments.contains("--settings-categories") { path = [.categories] }
             if ProcessInfo.processInfo.arguments.contains("--settings-notifications") { path = [.notifications] }
+            if ProcessInfo.processInfo.arguments.contains("--settings-calendars") { path = [.calendars] }
             if ProcessInfo.processInfo.arguments.contains("--settings-sync") { path = [.account] }
             if ProcessInfo.processInfo.arguments.contains("--settings-appearance") { path = [.appearance] }
             if ProcessInfo.processInfo.arguments.contains("--settings-edit") {
@@ -126,162 +111,140 @@ struct SettingsView: View {
         }
     }
 
-    private func destination(_ page: SettingsPage, icon: String, subtitle: String, badge: String? = nil) -> some View {
-        NavigationLink(value: page) {
-            HStack(spacing: 14) {
-                Image(systemName: icon)
-                    .font(.system(size: 19))
-                    .foregroundStyle(Theme.Colors.accent)
-                    .frame(width: 28)
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(page.rawValue).font(.system(size: 16, weight: .medium)).foregroundStyle(
-                        Theme.Colors.textPrimary)
-                    Text(subtitle).font(Theme.Typography.caption).foregroundStyle(Theme.Colors.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .contentTransition(.opacity)
+    private var overview: some View {
+        VStack(alignment: .leading, spacing: 22) {
+            ScreenTitle(text: "Настройки")
+                .accessibilityIdentifier("settings-title")
+            accountPreview
+            settingsSections
+            appearanceSection
+            Text("MonoTask · \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0")")
+                .font(.footnote)
+                .foregroundStyle(Theme.Colors.textSecondary)
+        }
+        .foregroundStyle(Theme.Colors.textPrimary)
+        .padding(.horizontal, Theme.Spacing.screenPadding)
+        .padding(.top, 20)
+        .padding(.bottom, 14)
+        .frame(maxWidth: 700, alignment: .leading)
+        .frame(maxWidth: .infinity)
+    }
+
+    private var settingsSections: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            MonoBrandSectionTitle(text: SettingsPage.categories.rawValue)
+            let columns =
+                dynamicTypeSize.isAccessibilitySize
+                ? [GridItem(.flexible())]
+                : Array(repeating: GridItem(.flexible(), spacing: 9, alignment: .top), count: 2)
+            LazyVGrid(columns: columns, spacing: 9) {
+                NavigationLink(value: SettingsPage.categories) {
+                    folderTile(
+                        "Личные папки", subtitle: "Цвета и значки", tint: MonoBrand.violet, icon: "star.fill")
                 }
-                Spacer(minLength: 0)
-                if let badge {
-                    Text(badge)
-                        .font(Theme.Typography.numeric(10, weight: .medium))
-                        .foregroundStyle(badge == "Вкл." ? Theme.Colors.accent : Theme.Colors.textSecondary)
-                        .padding(.horizontal, 8).padding(.vertical, 5)
-                        .background(Theme.Colors.fillStrong, in: Capsule())
+                .buttonStyle(MonoBrandPressStyle())
+                .accessibilityIdentifier("settings-folders")
+
+                Button {
+                    SharedListStore.shared.isPresented = true
+                } label: {
+                    folderTile(
+                        "Общие папки", subtitle: "Доступ и участники", tint: MonoBrand.mint, icon: "person.2.fill")
                 }
-                Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)).foregroundStyle(
-                    Theme.Colors.textSecondary)
+                .buttonStyle(MonoBrandPressStyle())
+                .accessibilityIdentifier("settings-shared-lists")
+
+                utilityLink(.notifications, icon: "bell.fill", tint: MonoBrand.blue, subtitle: morningSummary)
+                    .accessibilityIdentifier("settings-notifications")
+                utilityLink(.calendars, icon: "calendar", tint: Theme.Colors.accent, subtitle: "Apple и Google")
+                    .accessibilityIdentifier("settings-calendars")
             }
-            .padding(16)
-            .frame(minHeight: 76)
-            .contentShape(Rectangle())
-        }.buttonStyle(FullSurfaceButtonStyle())
-            .animation(reduceMotion ? nil : Theme.Motion.quick, value: subtitle)
-            .animation(reduceMotion ? nil : Theme.Motion.quick, value: badge)
+        }
+    }
+
+    private func folderTile(_ title: String, subtitle: String, tint: Color, icon: String) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            ZStack(alignment: .topTrailing) {
+                ClassicFolderArtwork(tint: tint, icon: icon)
+                    .frame(width: 72, height: 59)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                settingsChevron()
+            }
+            tileCopy(title, subtitle: subtitle)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, minHeight: 133, alignment: .topLeading)
+        .modifier(MonoBrandSurface(fill: tint.opacity(0.10), border: tint.opacity(0.27)))
+    }
+
+    private func utilityLink(_ page: SettingsPage, icon: String, tint: Color, subtitle: String) -> some View {
+        NavigationLink(value: page) {
+            VStack(alignment: .leading, spacing: 7) {
+                HStack {
+                    Image(systemName: icon)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(tint)
+                        .accessibilityHidden(true)
+                    Spacer()
+                    settingsChevron()
+                }
+                tileCopy(page.rawValue, subtitle: subtitle)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, minHeight: 98, alignment: .topLeading)
+            .modifier(MonoBrandSurface(radius: 21))
+        }
+        .buttonStyle(MonoBrandPressStyle())
+        .animation(reduceMotion ? nil : MonoBrandMotion.control, value: subtitle)
+    }
+
+    private func tileCopy(_ title: String, subtitle: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title)
+                .font(.subheadline.weight(.bold))
+                .foregroundStyle(Theme.Colors.textPrimary)
+            Text(subtitle)
+                .font(.caption)
+                .foregroundStyle(Theme.Colors.textSecondary)
+        }
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func settingsChevron(tint: Color = Theme.Colors.textSecondary) -> some View {
+        Image(systemName: "chevron.right")
+            .font(.caption2.weight(.bold))
+            .foregroundStyle(tint)
+            .accessibilityHidden(true)
     }
 
     private var accountPreview: some View {
         NavigationLink(value: SettingsPage.account) {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack {
-                    EyebrowLabel(text: "Аккаунт и синхронизация", color: Theme.Colors.textSecondary)
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 12, weight: .semibold))
+            HStack(spacing: 12) {
+                Image(systemName: "person.fill")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Theme.Colors.onAccent)
+                    .frame(width: 37, height: 37)
+                    .background(Theme.Colors.accent, in: .circle)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(auth.email ?? "Личное пространство")
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(Theme.Colors.textPrimary)
+                    Text(SettingsPage.account.rawValue)
+                        .font(.caption)
                         .foregroundStyle(Theme.Colors.textSecondary)
                 }
-                Text(auth.email ?? (SyncPresentation.isPreview ? "Демонстрационный аккаунт" : "Локальное пространство"))
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(Theme.Colors.textPrimary)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.leading)
-                HStack(spacing: 7) {
-                    Image(systemName: SyncPresentation.icon).font(.system(size: 13))
-                    Text(SyncPresentation.title).font(Theme.Typography.caption)
-                    Spacer(minLength: 0)
-                    if SyncPresentation.isPreview {
-                        Text("Демоданные").font(Theme.Typography.eyebrow).foregroundStyle(Theme.Colors.textMuted)
-                    }
-                }
-                .foregroundStyle(SyncPresentation.color)
-                .contentTransition(.opacity)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                settingsChevron(tint: Theme.Colors.accent)
             }
-            .padding(18)
-            .background(Theme.Colors.surfaceElevated, in: RoundedRectangle(cornerRadius: Theme.Radius.card))
-            .overlay(
-                RoundedRectangle(cornerRadius: Theme.Radius.card).strokeBorder(Theme.Colors.ruleStrong, lineWidth: 1)
-            )
-            .contentShape(RoundedRectangle(cornerRadius: Theme.Radius.card))
+            .padding(.horizontal, 13)
+            .padding(.vertical, 11)
+            .modifier(MonoBrandSurface(border: Theme.Colors.accent.opacity(0.32), radius: 25))
         }
-        .buttonStyle(FullSurfaceButtonStyle())
+        .buttonStyle(MonoBrandPressStyle())
         .accessibilityIdentifier("settings-account")
-        .animation(reduceMotion ? nil : Theme.Motion.quick, value: SyncPresentation.title)
-    }
-
-    private var schedulePreview: some View {
-        GroupCard(padding: 16) {
-            NavigationLink(value: SettingsPage.categories) {
-                HStack(spacing: 8) {
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text("Категории и расписание")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(Theme.Colors.textPrimary)
-                        Text("Фокус по дням недели")
-                            .font(Theme.Typography.caption).foregroundStyle(Theme.Colors.textSecondary)
-                    }
-                    Spacer(minLength: 0)
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.Colors.textSecondary)
-                }
-                .frame(minHeight: 44)
-                .contentShape(Rectangle())
-            }.buttonStyle(FullSurfaceButtonStyle())
-
-            if tags.isEmpty {
-                Text("Добавьте категорию и выберите дни фокуса.")
-                    .font(Theme.Typography.callout).foregroundStyle(Theme.Colors.textSecondary)
-                    .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 16)
-                Button {
-                    addingTag = true
-                } label: {
-                    Label("Новая категория", systemImage: "plus")
-                        .font(Theme.Typography.callout)
-                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                }.buttonStyle(FullSurfaceButtonStyle()).foregroundStyle(Theme.Colors.accent)
-            } else {
-                Hairline().padding(.top, 14).padding(.bottom, 10)
-                HStack {
-                    Text("Категория").font(Theme.Typography.eyebrow).foregroundStyle(Theme.Colors.textMuted)
-                    Spacer(minLength: 8)
-                    HStack(spacing: 4) {
-                        ForEach(Weekday.orderedFromMonday) { day in
-                            Text(day.shortName.uppercased())
-                                .font(Theme.Typography.numeric(9, weight: day == .current ? .bold : .regular))
-                                .foregroundStyle(day == .current ? Theme.Colors.accent : Theme.Colors.textMuted)
-                                .frame(width: 19)
-                        }
-                    }
-                }.padding(.bottom, 4)
-                ForEach(tags.prefix(4)) { tag in
-                    Button {
-                        editingTag = tag
-                    } label: {
-                        HStack(spacing: 8) {
-                            Circle().fill(tag.color).frame(width: 7, height: 7)
-                            Text(tag.name)
-                                .font(Theme.Typography.callout)
-                                .foregroundStyle(Theme.Colors.textPrimary)
-                                .lineLimit(1)
-                            Spacer(minLength: 8)
-                            HStack(spacing: 4) {
-                                ForEach(Weekday.orderedFromMonday) { day in
-                                    let active = tag.scheduledDays.contains(day)
-                                    RoundedRectangle(cornerRadius: 4)
-                                        .fill(active ? tag.color.opacity(0.85) : Theme.Colors.fillStrong)
-                                        .overlay(
-                                            RoundedRectangle(cornerRadius: 4).strokeBorder(
-                                                day == .current ? Theme.Colors.textSecondary : .clear, lineWidth: 1)
-                                        )
-                                        .frame(width: 19, height: 19)
-                                }
-                            }.accessibilityHidden(true)
-                        }
-                        .frame(minHeight: 44)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(FullSurfaceButtonStyle())
-                    .accessibilityLabel("\(tag.name), \(scheduleText(tag))")
-                    .accessibilityHint("Открыть расписание категории")
-                    .accessibilityIdentifier("settings-preview-" + tag.id.uuidString)
-                }
-                if tags.count > 4 {
-                    NavigationLink(value: SettingsPage.categories) {
-                        Text("Все категории · \(tags.count)")
-                            .font(Theme.Typography.caption)
-                            .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
-                    }.buttonStyle(FullSurfaceButtonStyle()).foregroundStyle(Theme.Colors.accent)
-                }
-            }
-        }
     }
 
     private var morningSummary: String {
@@ -291,35 +254,114 @@ struct SettingsView: View {
         return notifications.preferences.enabled ? "Утренний план в \(time)" : "План в \(time) · неактивен"
     }
 
-    private var notificationStatus: String {
-        guard notifications.preferences.enabled else { return "Выкл." }
-        switch notifications.authorization {
-        case .denied: return "Нет доступа"
-        case .notDetermined: return "Разрешить"
-        default: return "Вкл."
+    private var appearanceSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            MonoBrandSectionTitle(text: SettingsPage.appearance.rawValue)
+            VStack(spacing: 0) {
+                appearanceRows
+                Hairline(leading: 16)
+                Button {
+                    showsAppearancePreview.toggle()
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: "eye")
+                            .foregroundStyle(Theme.Colors.accent)
+                            .accessibilityHidden(true)
+                        Text("Предпросмотр")
+                            .foregroundStyle(Theme.Colors.textPrimary)
+                        Spacer(minLength: 8)
+                        Image(systemName: "chevron.down")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(Theme.Colors.textSecondary)
+                            .rotationEffect(.degrees(showsAppearancePreview ? 180 : 0))
+                            .accessibilityHidden(true)
+                    }
+                    .padding(.horizontal, 16)
+                    .frame(minHeight: Theme.Spacing.touchTargetMin)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(MonoBrandPressStyle())
+                .accessibilityIdentifier("settings-appearance")
+                .accessibilityValue(showsAppearancePreview ? "Развёрнуто" : "Свёрнуто")
+                if showsAppearancePreview {
+                    taskAppearancePreview
+                        .padding(.horizontal, 12)
+                        .modifier(MonoBrandSurface(fill: MonoBrand.inset, radius: 14))
+                        .padding([.horizontal, .bottom], 8)
+                        .transition(MonoBrandMotion.reveal(reduceMotion: reduceMotion, distance: 8))
+                }
+            }
+            .clipped()
+            .animation(reduceMotion ? MonoBrandMotion.fade : MonoBrandMotion.disclosure, value: showsAppearancePreview)
+            .font(Theme.Typography.body)
+            .modifier(MonoBrandSurface())
         }
     }
 
-    private var appearanceSummary: String {
-        (compactRows ? "Компактные строки" : "Обычные строки") + " · " + (showNotes ? "с заметками" : "без заметок")
+    private var appearanceRows: some View {
+        VStack(spacing: 0) {
+            Toggle(isOn: $showNotes) {
+                Label("Заметки в списке", systemImage: "text.alignleft")
+                    .labelStyle(.titleAndIcon)
+            }
+            .accessibilityLabel("Показывать заметки в списке")
+            .padding(.horizontal, 16)
+            .frame(minHeight: 48)
+            Hairline(leading: 16)
+            Toggle(isOn: $compactRows) {
+                Label("Компактные строки", systemImage: "line.3.horizontal")
+            }
+            .accessibilityLabel("Компактные строки задач")
+            .padding(.horizontal, 16)
+            .frame(minHeight: 48)
+        }
+        .toggleStyle(.switch)
+    }
+
+    private var taskAppearancePreview: some View {
+        HStack(spacing: 12) {
+            TaskCheckbox(isDone: false)
+                .frame(width: 24, height: 28)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Пример задачи")
+                    .font(Theme.Typography.caption)
+                    .foregroundStyle(Theme.Colors.textMuted)
+                Text("Подготовить план на завтра")
+                    .font(Theme.Typography.body)
+                    .foregroundStyle(Theme.Colors.textPrimary)
+                    .accessibilityIdentifier("settings-preview-task")
+                if showNotes {
+                    Text("Выбрать три главные задачи")
+                        .font(Theme.Typography.caption)
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                        .accessibilityIdentifier("settings-preview-notes")
+                        .transition(MonoBrandMotion.reveal(reduceMotion: reduceMotion, distance: 4))
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.vertical, compactRows ? 8 : 12)
+        .animation(reduceMotion ? nil : MonoBrandMotion.disclosure, value: showNotes)
+        .animation(reduceMotion ? nil : MonoBrandMotion.control, value: compactRows)
     }
 
     private var categories: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Выберите категорию, чтобы настроить цвет и дни фокуса. Для изменения порядка перетащите строку.")
+            Text("Выберите папку, чтобы настроить название, цвет и значок. Для изменения порядка перетащите строку.")
                 .font(Theme.Typography.callout).foregroundStyle(Theme.Colors.textSecondary)
-            GroupCard {
+            VStack(spacing: 0) {
                 ForEach(tags) { tag in
                     Button {
                         editingTag = tag
                     } label: {
                         HStack(spacing: 12) {
                             Image(systemName: "line.3.horizontal").foregroundStyle(Theme.Colors.textSecondary)
-                            Circle().fill(tag.color).frame(width: 9, height: 9)
-                            VStack(alignment: .leading, spacing: 5) {
+                            ClassicFolderArtwork(tint: tag.color, icon: tag.iconName)
+                                .frame(width: 38, height: 31)
+                            VStack(alignment: .leading, spacing: 4) {
                                 Text(tag.name).font(Theme.Typography.body).foregroundStyle(Theme.Colors.textPrimary)
-                                Text(scheduleText(tag)).font(Theme.Typography.caption).foregroundStyle(
-                                    Theme.Colors.textSecondary)
                             }
                             Spacer()
                             Text("\(tasks.filter { !$0.isDone && $0.tags.contains { $0.id == tag.id } }.count)")
@@ -328,23 +370,24 @@ struct SettingsView: View {
                                 Theme.Colors.textSecondary)
                         }.padding(16).contentShape(Rectangle())
                     }
-                    .buttonStyle(FullSurfaceButtonStyle())
+                    .buttonStyle(MonoBrandPressStyle())
                     .accessibilityIdentifier("settings-edit-category-\(tag.name)")
                     .draggable(tag.id.uuidString)
                     .dropDestination(for: String.self) { items, _ in
                         guard let raw = items.first, let from = UUID(uuidString: raw) else { return false }
                         return reorder(from: from, onto: tag.id)
                     }
-                    .contextMenu { Button("Удалить категорию", role: .destructive) { deletingTag = tag } }
+                    .contextMenu { Button("Удалить папку", role: .destructive) { deletingTag = tag } }
                     Hairline(leading: 48)
                 }
                 Button {
                     addingTag = true
                 } label: {
-                    Label("Новая категория", systemImage: "plus").frame(maxWidth: .infinity, alignment: .leading)
+                    Label("Новая папка", systemImage: "plus").frame(maxWidth: .infinity, alignment: .leading)
                         .padding(18)
-                }.buttonStyle(FullSurfaceButtonStyle()).foregroundStyle(Theme.Colors.accent)
+                }.buttonStyle(MonoBrandPressStyle()).foregroundStyle(Theme.Colors.accent)
             }
+            .modifier(MonoBrandSurface())
         }
     }
 
@@ -353,69 +396,27 @@ struct SettingsView: View {
             Text("Настройте, как задачи отображаются в списке на главном экране.")
                 .font(Theme.Typography.callout)
                 .foregroundStyle(Theme.Colors.textSecondary)
-            GroupCard(padding: 16) {
-                EyebrowLabel(text: "Пример списка")
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.bottom, 12)
-                HStack(spacing: 10) {
-                    TaskCheckbox(isDone: false)
-                        .frame(width: 30, height: 36)
-                        .accessibilityHidden(true)
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Подготовить план на завтра")
-                            .font(Theme.Typography.body)
-                            .foregroundStyle(Theme.Colors.textPrimary)
-                            .accessibilityIdentifier("settings-preview-task")
-                        HStack(spacing: 6) {
-                            Circle().fill(tags.first?.color ?? Theme.Colors.accent).frame(width: 6, height: 6)
-                            Text(tags.first?.name ?? "Категория")
-                                .font(Theme.Typography.caption).foregroundStyle(Theme.Colors.textSecondary)
-                            if showNotes {
-                                Text("Выбрать три главные задачи")
-                                    .font(Theme.Typography.caption).foregroundStyle(Theme.Colors.textMuted)
-                                    .lineLimit(1)
-                                    .accessibilityIdentifier("settings-preview-notes")
-                                    .transition(.opacity)
-                            }
-                        }
-                    }.frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .padding(.vertical, compactRows ? 8 : 12)
-                Hairline()
-            }
-            .animation(reduceMotion ? nil : Theme.Motion.standard, value: showNotes)
-            .animation(reduceMotion ? nil : Theme.Motion.standard, value: compactRows)
-
-            GroupCard(padding: 18) {
-                Toggle(isOn: $showNotes) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Заметки в списке").font(Theme.Typography.body)
-                        Text("Показывать текст заметки, не открывая задачу.")
-                            .font(Theme.Typography.caption).foregroundStyle(Theme.Colors.textSecondary)
-                    }
-                }
-                .accessibilityLabel("Показывать заметки в списке")
-                Hairline().padding(.vertical, 16)
-                Toggle(isOn: $compactRows) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Компактные строки задач").font(Theme.Typography.body)
-                        Text("Меньше отступов — больше задач на экране.")
-                            .font(Theme.Typography.caption).foregroundStyle(Theme.Colors.textSecondary)
-                    }
-                }
-                .accessibilityLabel("Компактные строки задач")
-            }
-            .foregroundStyle(Theme.Colors.textPrimary)
+            taskAppearancePreview
+                .padding(16)
+                .modifier(MonoBrandSurface())
+            appearanceRows
+                .modifier(MonoBrandSurface())
+                .font(Theme.Typography.body)
+                .foregroundStyle(Theme.Colors.textPrimary)
         }
     }
 
     private var account: some View {
         VStack(alignment: .leading, spacing: 20) {
-            GroupCard(padding: 18) {
-                Text(auth.email ?? "Локальное пространство")
-                    .font(Theme.Typography.body).frame(maxWidth: .infinity, alignment: .leading)
-            }
-            GroupCard(padding: 18) { SyncDetailsView() }
+            Text(auth.email ?? "Локальное пространство")
+                .font(.headline)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(18)
+                .modifier(MonoBrandSurface())
+            SyncDetailsView()
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(18)
+                .modifier(MonoBrandSurface())
             if auth.userID != nil || SyncPresentation.isPreview {
                 Button {
                     confirmingSignOut = true
@@ -431,21 +432,13 @@ struct SettingsView: View {
                         )
                         .contentShape(RoundedRectangle(cornerRadius: Theme.Radius.card))
                 }
-                .buttonStyle(FullSurfaceButtonStyle())
+                .buttonStyle(MonoBrandPressStyle())
                 .accessibilityIdentifier("settings-sign-out")
                 .disabled(auth.isBusy)
                 .padding(.top, 4)
             }
             if let error = auth.errorMessage { Text(error).foregroundStyle(Theme.Colors.danger) }
         }
-    }
-
-    private func scheduleText(_ tag: Tag) -> String {
-        let days = Weekday.orderedFromMonday.filter { tag.scheduledDays.contains($0) }
-        if days.count == 7 { return "Каждый день" }
-        if days.isEmpty { return "Дни фокуса не выбраны" }
-        if days == Array(Weekday.orderedFromMonday.prefix(5)) { return "Пн–Пт" }
-        return days.map(\.shortName).joined(separator: ", ")
     }
 
     private func reorder(from: UUID, onto: UUID) -> Bool {

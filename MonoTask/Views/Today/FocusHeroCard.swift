@@ -17,7 +17,7 @@ struct FocusHeroCard: View {
     }
 
     private var title: String {
-        scope == .focus ? "Сегодня" : scope.title(tags: tags)
+        scope.title(tags: tags)
     }
 
     var body: some View {
@@ -26,7 +26,6 @@ struct FocusHeroCard: View {
             HStack(spacing: 8) {
                 CurrentDateLabel(date: today)
                 Spacer()
-                SyncIndicator(compact: true)
             }
             .padding(.top, 8)
             .fixedSize(horizontal: false, vertical: true)
@@ -67,7 +66,6 @@ struct FocusHeroCard: View {
             .accessibilityHidden(compact)
 
             HStack(spacing: 6) {
-                pill(.focus, title: "Фокус", color: nil)
                 scopeMenu
                 Button {
                     SharedListStore.shared.isPresented = true
@@ -179,14 +177,14 @@ struct SyncIndicator: View {
             showingDetails = true
         } label: {
             HStack(spacing: 6) {
-                ZStack {
-                    if SupabaseService.shared.syncStatus.isSyncing {
-                        ProgressView().controlSize(.mini)
-                    } else {
-                        Circle().fill(SyncPresentation.color).frame(width: 6, height: 6)
-                    }
+                if SupabaseService.shared.syncStatus.isSyncing {
+                    ProgressView().controlSize(.mini)
+                        .frame(width: 12, height: 12)
+                } else if !compact {
+                    Circle().fill(SyncPresentation.color)
+                        .frame(width: 6, height: 6)
+                        .frame(width: 12, height: 12)
                 }
-                .frame(width: 12, height: 12)
                 if !compact {
                     Text(SyncPresentation.title.uppercased())
                         .contentTransition(.opacity)
@@ -214,7 +212,7 @@ struct SyncIndicator: View {
             .scrollBounceBehavior(.basedOnSize)
             .presentationDetents([.height(280), .large])
             .presentationDragIndicator(.visible)
-            .presentationBackground(Theme.Colors.surfaceElevated)
+            .presentationBackground(Theme.Colors.background)
         }
         #else
         .popover(isPresented: $showingDetails) {

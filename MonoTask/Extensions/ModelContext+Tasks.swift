@@ -5,7 +5,9 @@ extension ModelContext {
     /// Creates a task from a capture bar and schedules a sync.
     @MainActor
     @discardableResult
-    func createTask(title: String, tag: Tag?, highPriority: Bool) -> TaskItem? {
+    func createTask(
+        title: String, tag: Tag?, highPriority: Bool, reminderDate: Date? = nil, repeatsReminderDaily: Bool = false
+    ) -> TaskItem? {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
 
@@ -14,8 +16,10 @@ extension ModelContext {
             bucket: .todo,
             priority: highPriority ? .high : .none,
             isHighPriorityToday: highPriority,
+            dueDate: reminderDate,
             tags: tag.map { [$0] } ?? []
         )
+        task.repeatsReminderDaily = reminderDate != nil && repeatsReminderDaily
         insert(task)
         saveAndSync(delaySeconds: 0.3)
         return task
@@ -34,8 +38,8 @@ extension ModelContext {
         let moved = updated.remove(at: fromIndex)
         updated.insert(moved, at: toIndex)
 
-        if let highPriority, moved.isHighPriorityToday != highPriority {
-            moved.isHighPriorityToday = highPriority
+        if let highPriority, moved.isPriority != highPriority {
+            moved.priority = highPriority ? .high : .none
             moved.touch()
         }
 
@@ -46,7 +50,7 @@ extension ModelContext {
         saveAndSync(delaySeconds: 0.4)
     }
 
-    /// Promotes a dropped open task and places it first in the priority section.
+    /// Gives a dropped open task medium priority and places it first within that priority.
     @MainActor
     @discardableResult
     func prioritizeTask(_ id: UUID, in ordered: [TaskItem]) -> Bool {
@@ -54,9 +58,13 @@ extension ModelContext {
             !task.isDone, !TaskDeletionManager.shared.isPending(task)
         else { return false }
 
-        task.isHighPriorityToday = true
+        task.priority = .medium
         task.touch()
-        let updated = [task] + ordered.filter { $0.id != id }
+        let remaining = ordered.filter { $0.id != id }.sorted {
+            if $0.sortOrder != $1.sortOrder { return $0.sortOrder < $1.sortOrder }
+            return $0.createdAt > $1.createdAt
+        }
+        let updated = [task] + remaining
         for (index, item) in updated.enumerated() where item.sortOrder != index {
             item.sortOrder = index
             item.touch()
@@ -77,7 +85,7 @@ extension ModelContext {
 
     @MainActor
     func toggleHighPriority(_ task: TaskItem) {
-        task.isHighPriorityToday.toggle()
+        task.priority = task.isPriority ? .none : .high
         task.touch()
         saveAndSync(delaySeconds: 0.3)
     }

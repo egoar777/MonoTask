@@ -3,21 +3,29 @@ import SwiftData
 
 struct TaskEditSheet: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.modelContext) private var modelContext
     @Query(sort: [SortDescriptor(\Tag.sortOrder), SortDescriptor(\Tag.createdAt)]) private var availableTags: [Tag]
 
-    @Bindable var task: TaskItem
+    let task: TaskItem
 
-    // Edits are buffered and committed once, on "Готово" or when the sheet is
-    // swiped away, so every change is marked for sync and an emptied title never sticks.
+    private struct SubtaskDraft: Identifiable, Equatable {
+        let id: UUID
+        var title: String
+        var isCompleted: Bool
+    }
+
+    // The sheet only writes its draft when the user saves.
     @State private var title: String = ""
     @State private var notes: String = ""
-    @State private var isHighPriorityToday: Bool = false
+    @State private var priority: Priority = .none
     @State private var selectedTagId: UUID? = nil
-    @State private var subtasksDirty: Bool = false
-    @State private var didFinish: Bool = false
+    @State private var originalSubtasks: [SubtaskDraft] = []
+    @State private var subtasks: [SubtaskDraft] = []
     @State private var reminderEnabled = false
+    @State private var repeatsReminderDaily = false
     @State private var reminderDate = Date.now.addingTimeInterval(3600)
     @State private var notifications = NotificationService.shared
 
@@ -26,50 +34,80 @@ struct TaskEditSheet: View {
     @State private var confirmingDelete: Bool = false
     @FocusState private var isSubtaskFieldFocused: Bool
 
-    var body: some View {
-        VStack(spacing: 0) {
-            header
-
-            ScrollView {
-                VStack(alignment: .leading, spacing: 26) {
-                    titleAndNotes
-                    propertiesCard
-                    reminderCard
-                    subtasksBlock
-                    deleteButton
-                }
-                .padding(.horizontal, Theme.Spacing.screenPadding)
-                .padding(.top, 8)
-                .padding(.bottom, 32)
-            }
-            .scrollDismissesKeyboard(.interactively)
-            .monoScrollEdge()
-        }
-        .background(Theme.Colors.background.ignoresSafeArea())
-        .tint(Theme.Colors.accent)
+    @ViewBuilder var body: some View {
         #if os(iOS)
+        let sheet = NavigationStack {
+            editor
+                .navigationTitle("Задача")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) { cancelButton }
+                    ToolbarItem(placement: .confirmationAction) { doneButton }
+                }
+        }
+        .tint(Theme.Colors.accent)
+        .interactiveDismissDisabled(hasChanges)
+        .presentationDetents([.fraction(0.82)])
         .presentationDragIndicator(.visible)
-        .presentationBackground(Theme.Colors.background)
-        .presentationCornerRadius(Theme.Radius.sheet)
+
+        if reduceTransparency {
+            sheet.presentationBackground(Theme.Colors.background)
+        } else if #available(iOS 26.0, *) {
+            sheet
+        } else {
+            sheet.presentationBackground(.ultraThinMaterial)
+        }
         #else
+        VStack(spacing: 0) {
+            HStack {
+                cancelButton
+                Spacer()
+                Text("Задача").font(.headline)
+                Spacer()
+                doneButton
+            }
+            .padding(Theme.Spacing.lg)
+            editor
+        }
+        .background(Theme.Colors.background)
+        .tint(Theme.Colors.accent)
         .frame(minWidth: 520, idealWidth: 560, minHeight: 540, idealHeight: 620)
         #endif
+    }
+
+    private var editor: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: Theme.Spacing.xxl) {
+                titleAndNotes
+                propertiesCard
+                reminderCard
+                subtasksBlock
+                deleteButton
+            }
+            .padding(.horizontal, Theme.Spacing.screenPadding)
+            .padding(.top, Theme.Spacing.lg)
+            .padding(.bottom, Theme.Spacing.xxxl)
+        }
+        .scrollDismissesKeyboard(.interactively)
+        .foregroundStyle(Theme.Colors.textPrimary)
+        .tint(Theme.Colors.accent)
         .preferredColorScheme(Theme.colorScheme)
         .onAppear {
             title = task.title
             notes = task.notes
-            isHighPriorityToday = task.isHighPriorityToday
+            priority = task.priority
             selectedTagId = task.tags.first?.id
+            originalSubtasks = task.sortedSubtasks.map {
+                SubtaskDraft(id: $0.id, title: $0.title, isCompleted: $0.isCompleted)
+            }
+            subtasks = originalSubtasks
             reminderEnabled = task.dueDate != nil
+            repeatsReminderDaily = reminderEnabled && task.repeatsReminderDaily
             reminderDate = task.dueDate ?? Date.now.addingTimeInterval(3600)
-        }
-        .onDisappear {
-            isSubtaskFieldFocused = false
-            hideKeyboard()
-            commitChanges()
+            Task { await notifications.checkAuthorization() }
         }
         .onReceive(NotificationCenter.default.publisher(for: .dismissTaskEditor)) { _ in finish() }
-        .confirmationDialog("Удалить задачу?", isPresented: $confirmingDelete, titleVisibility: .visible) {
+        .alert("Удалить задачу?", isPresented: $confirmingDelete) {
             Button("Удалить", role: .destructive) {
                 deleteTask()
             }
@@ -77,208 +115,219 @@ struct TaskEditSheet: View {
         }
     }
 
-    // MARK: - Header
-
-    private var header: some View {
-        HStack(alignment: .center) {
-            VStack(alignment: .leading, spacing: 3) {
-                CurrentDateLabel()
-                EyebrowLabel(text: task.isDone ? "Задача · выполнена" : "Задача")
-                Text("Создана \(task.createdAt.formattedRelative.lowercased())")
-                    .font(Theme.Typography.caption)
-                    .foregroundColor(Theme.Colors.textMuted)
-            }
-
-            Spacer()
-
-            Button {
-                finish()
-            } label: {
-                Text("Готово")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(Theme.Colors.onInverse)
-                    .padding(.horizontal, 14)
-                    .frame(height: 32)
-                    .background(Theme.Colors.inverse)
-                    .clipShape(Capsule())
-            }
-            .buttonStyle(FullSurfaceButtonStyle())
-            .keyboardShortcut(.cancelAction)
+    private var cancelButton: some View {
+        Button(role: .cancel) {
+            dismiss()
+        } label: {
+            Text("Отмена").foregroundStyle(Theme.Colors.textPrimary)
         }
-        .padding(.horizontal, Theme.Spacing.screenPadding)
-        .padding(.top, 22)
-        .padding(.bottom, 12)
+        .keyboardShortcut(.cancelAction)
     }
 
-    // MARK: - Title & Notes
+    private var doneButton: some View {
+        Button("Готово", action: finish)
+            .fontWeight(.semibold)
+            .keyboardShortcut(.defaultAction)
+            .disabled(trimmedTitle.isEmpty)
+    }
+
+    // MARK: - Details
 
     private var titleAndNotes: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            TextField("Что нужно сделать?", text: $title, axis: .vertical)
-                .accessibilityIdentifier("task-editor-title")
-                .font(Theme.Typography.editorTitle)
-                .tracking(-0.6)
-                .foregroundColor(Theme.Colors.textPrimary)
-                .textFieldStyle(.plain)
+        GroupCard(padding: Theme.Spacing.lg) {
+            VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+                TextField("Название задачи", text: $title, axis: .vertical)
+                    .font(.title2.weight(.semibold))
+                    .textFieldStyle(.plain)
+                    .frame(minHeight: Theme.Spacing.touchTargetMin)
+                    .accessibilityIdentifier("task-editor-title")
 
-            TextField("Заметки", text: $notes, axis: .vertical)
-                .accessibilityIdentifier("task-editor-notes")
-                .font(Theme.Typography.callout)
-                .foregroundColor(Theme.Colors.textSecondary)
+                Hairline()
+
+                TextField(
+                    "Заметки",
+                    text: $notes,
+                    prompt: Text("Заметки").foregroundStyle(Theme.Colors.textSecondary),
+                    axis: .vertical
+                )
+                .font(.body)
+                .foregroundStyle(Theme.Colors.textSecondary)
                 .lineLimit(2...10)
                 .textFieldStyle(.plain)
+                .frame(minHeight: Theme.Spacing.touchTargetMin, alignment: .topLeading)
+                .accessibilityIdentifier("task-editor-notes")
+            }
         }
     }
-
-    // MARK: - Properties
 
     private var propertiesCard: some View {
         GroupCard {
-
-            HStack(spacing: 12) {
-                Image(systemName: isHighPriorityToday ? "flag.fill" : "flag")
-                    .font(.system(size: 15))
-                    .foregroundColor(isHighPriorityToday ? Theme.Colors.priority : Theme.Colors.textMuted)
-                    .frame(width: 20)
-
-                Text("Высокий приоритет")
-                    .font(Theme.Typography.callout)
-                    .foregroundColor(Theme.Colors.textPrimary)
-
-                Spacer()
-
-                Toggle(
-                    "",
-                    isOn: Binding(
-                        get: { isHighPriorityToday },
-                        set: { newValue in
-                            Haptics.selection()
-                            withAnimation(reduceMotion ? nil : Theme.Motion.standard) {
-                                isHighPriorityToday = newValue
-                            }
+            Menu {
+                ForEach(Priority.selectable) { value in
+                    Button {
+                        priority = value
+                    } label: {
+                        Label {
+                            Text(value.title)
+                        } icon: {
+                            value.menuIcon
                         }
-                    )
-                )
-                .labelsHidden()
-                .accessibilityLabel("Высокий приоритет")
-                .tint(Theme.Colors.accent)
-            }
-            .padding(.horizontal, 14)
-            .frame(minHeight: 50)
-
-            if !availableTags.isEmpty {
-                Hairline(leading: 46)
-
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack(spacing: 12) {
-                        Image(systemName: "circle.grid.2x2")
-                            .font(.system(size: 14))
-                            .foregroundColor(Theme.Colors.textMuted)
-                            .frame(width: 20)
-                        Text("Категория")
-                            .font(Theme.Typography.callout)
-                            .foregroundColor(Theme.Colors.textPrimary)
-                    }
-                    .padding(.horizontal, 14)
-
-                    // Scrolls edge to edge so chips are not clipped by the card's inner padding
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 6) {
-                            ForEach(availableTags) { tag in
-                                ContextChip(
-                                    title: tag.name,
-                                    color: tag.color,
-                                    isSelected: selectedTagId == tag.id
-                                ) {
-                                    Haptics.selection()
-                                    selectedTagId = selectedTagId == tag.id ? nil : tag.id
-                                }
-                            }
-                        }
-                        .padding(.leading, 46)
-                        .padding(.trailing, 14)
                     }
                 }
-                .padding(.vertical, 12)
+            } label: {
+                HStack {
+                    Text("Приоритет").foregroundStyle(Theme.Colors.textPrimary)
+                    Spacer()
+                    Label(priority.title, systemImage: priority.systemImage)
+                        .foregroundStyle(priority.color)
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                }
+                .frame(maxWidth: .infinity, minHeight: 52)
+                .contentShape(Rectangle())
+            }
+            .menuStyle(.borderlessButton)
+            .accessibilityLabel("Приоритет")
+            .accessibilityIdentifier("task-editor-priority")
+            .accessibilityValue(priority.title)
+            .padding(.horizontal, Theme.Spacing.lg)
+            .frame(minHeight: 52)
+
+            if !availableTags.isEmpty {
+                Hairline(leading: Theme.Spacing.lg)
+                folderMenu
             }
         }
+        .font(.body)
+    }
+
+    private var folderMenu: some View {
+        let selectedTag = availableTags.first { $0.id == selectedTagId }
+        return Menu {
+            Picker("Папка", selection: $selectedTagId) {
+                Text("Без папки").tag(nil as UUID?)
+                ForEach(availableTags) { tag in
+                    Label(tag.name, systemImage: tag.folderIconName).tag(Optional(tag.id))
+                }
+            }
+        } label: {
+            let layout =
+                dynamicTypeSize.isAccessibilitySize
+                ? AnyLayout(VStackLayout(alignment: .leading, spacing: Theme.Spacing.xs))
+                : AnyLayout(HStackLayout(spacing: Theme.Spacing.sm))
+            layout {
+                Label("Папка", systemImage: "folder")
+                folderValue(selectedTag)
+                    .frame(maxWidth: .infinity, alignment: dynamicTypeSize.isAccessibilitySize ? .leading : .trailing)
+            }
+            .padding(.horizontal, Theme.Spacing.lg)
+            .padding(.vertical, Theme.Spacing.sm)
+            .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .menuStyle(.borderlessButton)
+        .accessibilityLabel("Папка")
+        .accessibilityValue(selectedTag?.name ?? "Без папки")
+    }
+
+    private func folderValue(_ tag: Tag?) -> some View {
+        HStack(spacing: Theme.Spacing.sm) {
+            if let tag {
+                Circle().fill(tag.color).frame(width: 8, height: 8)
+                    .accessibilityHidden(true)
+            }
+            Text(tag?.name ?? "Без папки")
+            Image(systemName: "chevron.up.chevron.down")
+                .font(.caption.weight(.semibold))
+                .accessibilityHidden(true)
+        }
+        .foregroundStyle(Theme.Colors.textSecondary)
+    }
+
+    private func sectionHeading(_ title: String) -> some View {
+        Text(title)
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(Theme.Colors.textSecondary)
+            .accessibilityAddTraits(.isHeader)
     }
 
     private var reminderCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            SectionTitle(text: "Напоминание")
-            GroupCard(padding: 14) {
-                VStack(alignment: .leading, spacing: 12) {
-                    Toggle(
-                        "Напомнить о задаче",
-                        isOn: Binding(
-                            get: { reminderEnabled },
-                            set: { enabled in
-                                withAnimation(reduceMotion ? nil : Theme.Motion.standard) { reminderEnabled = enabled }
-                                if enabled { Task { await notifications.enableTaskReminders() } }
-                            })
-                    )
-                    .disabled(task.isDone)
-                    if reminderEnabled {
-                        DatePicker(
-                            "Дата и время", selection: $reminderDate,
-                            displayedComponents: [.date, .hourAndMinute])
-                        if reminderDate <= .now {
-                            Text("Это время уже прошло. Выберите будущее время, чтобы получить напоминание.")
-                                .foregroundColor(Theme.Colors.priority)
-                        }
-                        if notifications.authorization == .denied {
-                            Text(
-                                "Уведомления запрещены в настройках системы. Разрешите их в разделе уведомлений MonoTask."
-                            )
-                            .foregroundColor(Theme.Colors.priority)
-                        } else if !notifications.preferences.enabled || !notifications.preferences.taskReminders {
-                            Text("Напоминания задач выключены в настройках MonoTask.")
-                                .foregroundColor(Theme.Colors.priority)
-                        }
-                    }
-                    if task.isDone {
-                        Text("Задача выполнена — напоминание отменено.")
-                    } else {
-                        Text(
-                            "Время сохраняется вместе с задачей. Напоминание появится на устройствах, где разрешены уведомления."
-                        )
-                    }
+        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+            sectionHeading("Напоминание")
+            GroupCard {
+                Toggle(isOn: $reminderEnabled) {
+                    Label("Напомнить о задаче", systemImage: "bell")
                 }
-                .font(Theme.Typography.callout)
-                .foregroundColor(Theme.Colors.textPrimary)
+                .disabled(task.isDone)
+                .padding(.horizontal, Theme.Spacing.lg)
+                .frame(minHeight: 52)
+                .accessibilityIdentifier("task-reminder-enabled")
+
+                if reminderEnabled && !task.isDone {
+                    Hairline(leading: Theme.Spacing.lg)
+                    VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                        Toggle("Ежедневно", isOn: $repeatsReminderDaily)
+                            .frame(minHeight: Theme.Spacing.touchTargetMin)
+                            .accessibilityIdentifier("task-reminder-daily")
+                        if !repeatsReminderDaily {
+                            DatePicker("Дата", selection: $reminderDate, displayedComponents: .date)
+                                .frame(minHeight: Theme.Spacing.touchTargetMin)
+                        }
+                        DatePicker("Время", selection: $reminderDate, displayedComponents: .hourAndMinute)
+                            .frame(minHeight: Theme.Spacing.touchTargetMin)
+                        if !repeatsReminderDaily && reminderDate <= .now {
+                            Text("Выберите будущее время, чтобы получить напоминание.")
+                                .font(.footnote)
+                                .foregroundStyle(Theme.Colors.priority)
+                        }
+                    }
+                    .environment(\.locale, Locale(identifier: "ru_RU"))
+                    .padding(.horizontal, Theme.Spacing.lg)
+                    .padding(.vertical, Theme.Spacing.sm)
+                }
+            }
+            .font(.body)
+            .toggleStyle(.switch)
+
+            if task.isDone {
+                reminderHint("Задача выполнена. Напоминание отменено.")
+            } else if reminderEnabled, notifications.authorization == .denied {
+                reminderHint("Разрешите уведомления MonoTask в настройках системы.")
             }
         }
+        .animation(reduceMotion ? nil : Theme.Motion.standard, value: reminderEnabled)
+    }
+
+    private func reminderHint(_ text: String) -> some View {
+        Text(text)
+            .font(.footnote)
+            .foregroundStyle(Theme.Colors.textSecondary)
+            .padding(.horizontal, Theme.Spacing.xs)
     }
 
     // MARK: - Subtasks
 
     private var subtasksBlock: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                SectionTitle(text: "Подзадачи")
-                Spacer()
-                if task.hasSubtasks {
-                    Text("\(task.completedSubtasksCount)/\(task.subtasksCount)")
-                        .font(Theme.Typography.numeric(12))
-                        .foregroundColor(Theme.Colors.textSecondary)
-                }
-            }
+            sectionHeading("Подзадачи")
 
-            if task.hasSubtasks {
-                ProgressLine(progress: task.subtasksProgress)
-                    .padding(.bottom, 2)
+            if !subtasks.isEmpty {
+                let completed = subtasks.filter(\.isCompleted).count
+                ProgressView(value: Double(completed), total: Double(subtasks.count))
+                    .accessibilityLabel("Выполнено подзадач")
+                    .accessibilityValue("\(completed) из \(subtasks.count)")
             }
 
             GroupCard {
-                ForEach(Array(task.sortedSubtasks.enumerated()), id: \.element.id) { index, subtask in
-                    if index > 0 {
+                ForEach($subtasks) { $subtask in
+                    if subtask.id != subtasks.first?.id {
                         Hairline(leading: 44)
                     }
-                    subtaskRow(subtask)
+                    subtaskRow($subtask)
                 }
 
-                if task.hasSubtasks {
+                if !subtasks.isEmpty {
                     Hairline(leading: 44)
                 }
 
@@ -287,59 +336,46 @@ struct TaskEditSheet: View {
         }
     }
 
-    private func subtaskRow(_ subtask: SubtaskItem) -> some View {
-        HStack(spacing: 6) {
+    private func subtaskRow(_ draft: Binding<SubtaskDraft>) -> some View {
+        let subtask = draft.wrappedValue
+        return HStack(spacing: Theme.Spacing.xs) {
             Button {
-                withAnimation(
-                    KeyboardObserver.shared.isKeyboardVisible ? nil : .spring(response: 0.25, dampingFraction: 0.7)
-                ) {
-                    subtask.isCompleted.toggle()
-                    subtask.touch()
-                    subtasksDirty = true
-                }
-                subtask.isCompleted ? Haptics.success() : Haptics.light()
+                draft.isCompleted.wrappedValue.toggle()
+                draft.isCompleted.wrappedValue ? Haptics.success() : Haptics.light()
             } label: {
                 TaskCheckbox(isDone: subtask.isCompleted, size: 19)
-                    .frame(width: 32, height: 40)
+                    .frame(width: Theme.Spacing.touchTargetMin, height: Theme.Spacing.touchTargetMin)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(FullSurfaceButtonStyle())
+            .buttonStyle(.plain)
+            .accessibilityLabel(subtask.isCompleted ? "Отметить как невыполненную" : "Отметить как выполненную")
+            .accessibilityValue(subtask.title)
 
-            TextField(
-                "Подзадача",
-                text: Binding(
-                    get: { subtask.title },
-                    set: {
-                        subtask.title = $0
-                        subtask.touch()
-                        subtasksDirty = true
-                    }
-                )
-            )
-            .textFieldStyle(.plain)
-            .font(.system(size: 15))
-            .strikethrough(subtask.isCompleted, color: Theme.Colors.textMuted)
-            .foregroundColor(subtask.isCompleted ? Theme.Colors.textMuted : Theme.Colors.textPrimary)
+            TextField("Подзадача", text: draft.title)
+                .textFieldStyle(.plain)
+                .font(.body)
+                .strikethrough(subtask.isCompleted, color: Theme.Colors.textSecondary)
+                .foregroundStyle(subtask.isCompleted ? Theme.Colors.textSecondary : Theme.Colors.textPrimary)
 
-            Button {
-                Haptics.light()
-                withAnimation {
-                    deleteSubtask(subtask)
-                }
+            Button(role: .destructive) {
+                subtasks.removeAll { $0.id == subtask.id }
             } label: {
                 Image(systemName: "xmark")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(Theme.Colors.textMuted)
-                    .frame(width: 30, height: 30)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Theme.Colors.textSecondary)
+                    .frame(width: Theme.Spacing.touchTargetMin, height: Theme.Spacing.touchTargetMin)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(FullSurfaceButtonStyle())
+            .buttonStyle(.plain)
+            .accessibilityLabel("Удалить подзадачу")
+            .accessibilityValue(subtask.title)
 
             Image(systemName: "line.3.horizontal")
                 .font(.system(size: 12, weight: .medium))
                 .foregroundColor(Theme.Colors.textMuted.opacity(0.6))
-                .frame(width: 26, height: 36)
+                .frame(width: Theme.Spacing.touchTargetMin, height: Theme.Spacing.touchTargetMin)
                 .contentShape(Rectangle())
+                .accessibilityHidden(true)
                 .draggable(subtask.id.uuidString) {
                     Text(subtask.title.isEmpty ? "Подзадача" : subtask.title)
                         .font(.system(size: 14, weight: .medium))
@@ -354,6 +390,20 @@ struct TaskEditSheet: View {
         .padding(.trailing, 8)
         .frame(minHeight: 44)
         .background(targetedSubtaskId == subtask.id ? Theme.Colors.fillStrong : Color.clear)
+        .accessibilityActions {
+            if let index = subtasks.firstIndex(where: { $0.id == subtask.id }) {
+                if index > 0 {
+                    Button("Переместить выше") {
+                        reorderSubtasks(fromId: subtask.id, toId: subtasks[index - 1].id)
+                    }
+                }
+                if index + 1 < subtasks.count {
+                    Button("Переместить ниже") {
+                        reorderSubtasks(fromId: subtask.id, toId: subtasks[index + 1].id)
+                    }
+                }
+            }
+        }
         .dropDestination(for: String.self) { items, _ in
             targetedSubtaskId = nil
             guard let rawId = items.first,
@@ -370,60 +420,70 @@ struct TaskEditSheet: View {
     }
 
     private var addSubtaskRow: some View {
-        let canAdd = !newSubtaskTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        return HStack(spacing: 6) {
+        HStack(spacing: Theme.Spacing.xs) {
             Image(systemName: "plus")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundColor(canAdd ? Theme.Colors.textPrimary : Theme.Colors.textMuted)
-                .frame(width: 32, height: 40)
+                .foregroundStyle(Theme.Colors.accent)
+                .frame(width: Theme.Spacing.touchTargetMin)
+                .accessibilityHidden(true)
 
-            TextField("Добавить подзадачу", text: $newSubtaskTitle)
-                .accessibilityIdentifier("task-editor-add-subtask")
-                .textFieldStyle(.plain)
-                .font(.system(size: 15))
-                .foregroundColor(Theme.Colors.textPrimary)
-                .focused($isSubtaskFieldFocused)
-                .submitLabel(.next)
-                .onSubmit {
-                    handleAddSubtask()
-                }
+            TextField(
+                "Добавить подзадачу",
+                text: $newSubtaskTitle,
+                prompt: Text("Добавить подзадачу").foregroundStyle(Theme.Colors.textSecondary)
+            )
+            .accessibilityIdentifier("task-editor-add-subtask")
+            .textFieldStyle(.plain)
+            .font(.body)
+            .frame(minHeight: Theme.Spacing.touchTargetMin)
+            .focused($isSubtaskFieldFocused)
+            .submitLabel(.next)
+            .onSubmit(handleAddSubtask)
 
-            if canAdd {
-                SubmitCircleButton(isEnabled: true, size: 26) {
-                    handleAddSubtask()
-                }
+            if !pendingSubtaskTitle.isEmpty {
+                SubmitCircleButton(isEnabled: true, size: 26, label: "Добавить подзадачу", action: handleAddSubtask)
             }
         }
-        .padding(.leading, 6)
-        .padding(.trailing, 10)
-        .frame(minHeight: 44)
+        .padding(.trailing, Theme.Spacing.sm)
     }
 
-    // MARK: - Delete
-
     private var deleteButton: some View {
-        Button {
-            Haptics.warning()
-            confirmingDelete = true
-        } label: {
-            HStack(spacing: 8) {
-                Image(systemName: "trash")
-                    .font(.system(size: 13))
-                Text("Удалить задачу")
-                    .font(.system(size: 14, weight: .medium))
+        GroupCard {
+            Button(role: .destructive) {
+                Haptics.warning()
+                confirmingDelete = true
+            } label: {
+                Label("Удалить задачу", systemImage: "trash")
+                    .font(.body)
+                    .foregroundStyle(Theme.Colors.danger)
+                    .padding(.horizontal, Theme.Spacing.lg)
+                    .padding(.vertical, Theme.Spacing.sm)
+                    .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
+                    .contentShape(Rectangle())
             }
-            .foregroundColor(Theme.Colors.danger)
-            .frame(maxWidth: .infinity)
-            .frame(height: 44)
-            .background(Theme.Colors.dangerMuted.opacity(0.6))
-            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md, style: .continuous))
+            .buttonStyle(.plain)
         }
-        .buttonStyle(FullSurfaceButtonStyle())
     }
 
     // MARK: - Actions
 
+    private var trimmedTitle: String { title.trimmingCharacters(in: .whitespacesAndNewlines) }
+    private var trimmedNotes: String { notes.trimmingCharacters(in: .whitespacesAndNewlines) }
+    private var pendingSubtaskTitle: String { newSubtaskTitle.trimmingCharacters(in: .whitespacesAndNewlines) }
+    private var draftDeadline: Date? { reminderEnabled ? reminderDate : nil }
+    private var draftRepeatsDaily: Bool { reminderEnabled && repeatsReminderDaily }
+    private var hasChanges: Bool {
+        trimmedTitle != task.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            || trimmedNotes != task.notes.trimmingCharacters(in: .whitespacesAndNewlines)
+            || priority != task.priority
+            || selectedTagId != task.tags.first?.id
+            || draftDeadline != task.dueDate
+            || draftRepeatsDaily != task.repeatsReminderDaily
+            || subtasks != originalSubtasks
+            || !pendingSubtaskTitle.isEmpty
+    }
+
     private func finish() {
+        handleAddSubtask()
         isSubtaskFieldFocused = false
         hideKeyboard()
         commitChanges()
@@ -433,26 +493,23 @@ struct TaskEditSheet: View {
 
     /// Applies buffered edits once. Unchanged tasks are not marked for sync.
     private func commitChanges() {
-        guard !didFinish, !task.isDeleted else { return }
-        didFinish = true
+        guard !task.isDeleted else { return }
 
-        var changed = subtasksDirty
+        var changed = commitSubtasks()
 
         // Compare trimmed to trimmed so merely opening a task never rewrites it
-        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmedTitle.isEmpty && trimmedTitle != task.title.trimmingCharacters(in: .whitespacesAndNewlines) {
             task.title = trimmedTitle
             changed = true
         }
 
-        let trimmedNotes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmedNotes != task.notes.trimmingCharacters(in: .whitespacesAndNewlines) {
             task.notes = trimmedNotes
             changed = true
         }
 
-        if isHighPriorityToday != task.isHighPriorityToday {
-            task.isHighPriorityToday = isHighPriorityToday
+        if priority != task.priority {
+            task.priority = priority
             changed = true
         }
 
@@ -461,10 +518,13 @@ struct TaskEditSheet: View {
             changed = true
         }
 
-        let newReminder = reminderEnabled ? reminderDate : nil
-        if task.dueDate != newReminder {
-            task.dueDate = newReminder
+        if task.dueDate != draftDeadline || task.repeatsReminderDaily != draftRepeatsDaily {
+            task.dueDate = draftDeadline
+            task.repeatsReminderDaily = draftRepeatsDaily
             changed = true
+            if reminderEnabled && !task.isDone {
+                Task { await notifications.enableTaskReminders() }
+            }
         }
 
         if changed {
@@ -474,7 +534,6 @@ struct TaskEditSheet: View {
     }
 
     private func deleteTask() {
-        didFinish = true
         isSubtaskFieldFocused = false
         hideKeyboard()
         withAnimation(reduceMotion ? nil : Theme.Motion.standard) {
@@ -483,51 +542,53 @@ struct TaskEditSheet: View {
         dismiss()
     }
 
-    private func deleteSubtask(_ subtask: SubtaskItem) {
-        guard let idx = task.subtasks.firstIndex(where: { $0.id == subtask.id }) else { return }
-        task.subtasks.remove(at: idx)
-        modelContext.deleteWithSync(subtask)
-        task.touch()
-        modelContext.saveAndSync(delaySeconds: 0.2)
+    private func commitSubtasks() -> Bool {
+        guard subtasks != originalSubtasks else { return false }
+        let originals = Dictionary(uniqueKeysWithValues: originalSubtasks.map { ($0.id, $0) })
+        let existing = Dictionary(uniqueKeysWithValues: task.subtasks.map { ($0.id, $0) })
+        let draftIDs = Set(subtasks.map(\.id))
+        let orderChanged = subtasks.map(\.id) != originalSubtasks.map(\.id)
+
+        for item in task.subtasks where originals[item.id] != nil && !draftIDs.contains(item.id) {
+            task.subtasks.removeAll { $0.id == item.id }
+            modelContext.deleteWithSync(item)
+        }
+        for (index, draft) in subtasks.enumerated() {
+            if let original = originals[draft.id] {
+                guard let item = existing[draft.id] else { continue }
+                let titleChanged = draft.title != original.title
+                let completionChanged = draft.isCompleted != original.isCompleted
+                let positionChanged = orderChanged && item.sortOrder != index
+                if titleChanged { item.title = draft.title }
+                if completionChanged { item.isCompleted = draft.isCompleted }
+                if positionChanged { item.sortOrder = index }
+                if titleChanged || completionChanged || positionChanged { item.touch() }
+            } else {
+                let item = SubtaskItem(title: draft.title, isCompleted: draft.isCompleted, sortOrder: index)
+                modelContext.insert(item)
+                task.subtasks.append(item)
+            }
+        }
+        return true
     }
 
     private func reorderSubtasks(fromId: UUID, toId: UUID) {
-        var items = task.sortedSubtasks
-        guard let fromIndex = items.firstIndex(where: { $0.id == fromId }),
-            let toIndex = items.firstIndex(where: { $0.id == toId }),
+        guard let fromIndex = subtasks.firstIndex(where: { $0.id == fromId }),
+            let toIndex = subtasks.firstIndex(where: { $0.id == toId }),
             fromIndex != toIndex
         else { return }
 
         Haptics.selection()
-        withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
-            let moved = items.remove(at: fromIndex)
-            items.insert(moved, at: toIndex)
-            for (idx, item) in items.enumerated() where item.sortOrder != idx {
-                item.sortOrder = idx
-                item.touch()
-            }
-            subtasksDirty = true
+        withAnimation(reduceMotion ? nil : Theme.Motion.standard) {
+            let moved = subtasks.remove(at: fromIndex)
+            subtasks.insert(moved, at: toIndex)
         }
     }
 
     private func handleAddSubtask() {
-        let trimmed = newSubtaskTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-
+        guard !pendingSubtaskTitle.isEmpty else { return }
         Haptics.selection()
-        let nextOrder = (task.subtasks.map(\.sortOrder).max() ?? -1) + 1
-        let newSubtask = SubtaskItem(title: trimmed, sortOrder: nextOrder)
-        newSubtask.task = task
-        task.subtasks.append(newSubtask)
-        task.touch()
-        modelContext.insert(newSubtask)
-        modelContext.saveAndSync(delaySeconds: 0.3)
-
+        subtasks.append(SubtaskDraft(id: UUID(), title: pendingSubtaskTitle, isCompleted: false))
         newSubtaskTitle = ""
-
-        Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 50_000_000)
-            isSubtaskFieldFocused = true
-        }
     }
 }

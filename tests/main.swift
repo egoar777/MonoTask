@@ -45,10 +45,10 @@ p.weekdays = [4]
 let morning = plans()
 check(morning.count == 2, "Only two Wednesdays within 14 days")
 check(morning.allSatisfy { $0.taskID == nil }, "Morning tap must route to the plan, not an arbitrary task")
-check(morning.first!.body.contains("Учёба"), "Show the scheduled focus")
+check(!morning.first!.body.contains("Фокус"), "Morning plan no longer includes a daily focus")
 check(morning.first!.body.contains("Первая"), "Include focus tasks")
 check(morning.first!.body.contains("Без контекста"), "Include untagged tasks like the focus screen")
-check(!morning.first!.body.contains("Другой контекст"), "Exclude tasks from other contexts on a focus day")
+check(morning.first!.body.contains("Другой контекст"), "Default morning plan includes every folder")
 check(!morning.first!.body.contains("Выполнена"), "Never show completed tasks in a morning plan")
 check(morning.allSatisfy { calendar.component(.hour, from: $0.date) == 9 }, "Preserve local 09:00 across DST")
 check(
@@ -79,4 +79,23 @@ p.morningHour = 7
 check(plans().count == 13, "Do not schedule a morning plan in the past today")
 p.enabled = false
 check(plans().isEmpty, "Disabling after configuration clears both kinds")
+p.enabled = true
+p.taskReminders = true
+p.morningPlan = false
+let dailyTask = ReminderTask(
+    id: first, title: "Ежедневная", date: date("2026-10-20T05:30:00Z"),
+    done: false, priority: true, tagIDs: [], order: 0, repeatsDaily: true)
+let dailyPlans = NotificationPlanner.plans(tasks: [dailyTask], tags: [], preferences: p, now: now, calendar: calendar)
+check(dailyPlans.count == 1, "An old daily reminder still uses only one notification slot")
+check(dailyPlans.first?.date == date("2026-10-22T05:30:00Z"), "If today's time passed, start tomorrow")
+check(dailyPlans.first?.dailyTime == DateComponents(hour: 7, minute: 30, second: 0), "Repeat at the selected wall time")
+let afterDST = NotificationPlanner.plans(
+    tasks: [dailyTask], tags: [], preferences: p, now: date("2026-10-25T05:00:00Z"), calendar: calendar)
+check(afterDST.first?.date == date("2026-10-25T06:30:00Z"), "Keep the same local time after DST")
+let completedDailyTask = ReminderTask(
+    id: first, title: dailyTask.title, date: dailyTask.date, done: true,
+    priority: true, tagIDs: [], order: 0, repeatsDaily: true)
+check(
+    NotificationPlanner.plans(tasks: [completedDailyTask], tags: [], preferences: p, now: now, calendar: calendar).isEmpty,
+    "Completion cancels daily reminders")
 print("Passed \(checks) notification planner checks")

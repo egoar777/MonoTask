@@ -15,7 +15,7 @@ struct MacRootView: View {
     @Query(sort: [SortDescriptor(\TaskItem.sortOrder), SortDescriptor(\TaskItem.createdAt, order: .reverse)]) private
         var allTasks: [TaskItem]
 
-    @State private var selection: SidebarSelection? = .list(.focus)
+    @State private var selection: SidebarSelection? = .list(.all)
     @State private var showingAddTagSheet: Bool = false
     @State private var editingTag: Tag? = nil
     @State private var tagToDelete: Tag? = nil
@@ -25,7 +25,7 @@ struct MacRootView: View {
     init(initialTab: AppTab = .today) {
         let initial: SidebarSelection =
             switch initialTab {
-            case .today: .list(.focus)
+            case .today: .list(.all)
             case .activity: .activity
             case .settings: .settings
             }
@@ -53,7 +53,7 @@ struct MacRootView: View {
             switch NotificationService.shared.preferences.morningScope {
             case "all": selection = .list(.all)
             case "priority": selection = .list(.highPriority)
-            default: selection = .list(.focus)
+            default: selection = .list(.all)
             }
         }
         .tint(Theme.Colors.accent)
@@ -65,7 +65,7 @@ struct MacRootView: View {
             TagEditSheet(tagToEdit: nil)
         }
         .confirmationDialog(
-            "Удалить категорию «\(tagToDelete?.name ?? "")»?",
+            "Удалить папку «\(tagToDelete?.name ?? "")»?",
             isPresented: Binding(get: { tagToDelete != nil }, set: { if !$0 { tagToDelete = nil } })
         ) {
             Button("Удалить", role: .destructive) {
@@ -78,12 +78,12 @@ struct MacRootView: View {
                 tagToDelete = nil
             }
         } message: {
-            Text("Задачи останутся, но потеряют эту категорию.")
+            Text("Задачи останутся без этой папки.")
         }
         .onChange(of: tags.map(\.id)) { _, ids in
             // Leave a context that was deleted here or on another device
             if case .list(.tag(let id)) = selection, !ids.contains(id) {
-                selection = .list(.focus)
+                selection = .list(.all)
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged).receive(on: RunLoop.main)) { _ in
@@ -97,13 +97,10 @@ struct MacRootView: View {
         List {
             Section {
                 sidebarRow(
-                    .list(.focus), title: "Фокус дня", icon: "sun.max", tint: Theme.Colors.accent,
-                    count: openCount(.focus))
-                sidebarRow(
                     .list(.all), title: "Все задачи", icon: "tray", tint: Theme.Colors.textSecondary,
                     count: openCount(.all))
                 sidebarRow(
-                    .list(.highPriority), title: "Приоритет", icon: "flag", tint: Theme.Colors.priority,
+                    .list(.highPriority), title: "Приоритет", icon: "star", tint: Priority.medium.color,
                     count: openCount(.highPriority))
             } header: {
                 EyebrowLabel(text: "Задачи")
@@ -115,7 +112,7 @@ struct MacRootView: View {
                 }
             } header: {
                 HStack {
-                    EyebrowLabel(text: "Категории")
+                    EyebrowLabel(text: "Папки")
                     Spacer()
                     Button {
                         showingAddTagSheet = true
@@ -127,13 +124,13 @@ struct MacRootView: View {
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(FullSurfaceButtonStyle())
-                    .help("Новая категория")
+                    .help("Новая папка")
                 }
             }
 
             Section {
                 sidebarRow(
-                    .shared, title: "Общие списки", icon: "person.2", tint: Theme.Colors.textSecondary, count: nil)
+                    .shared, title: "Общие папки", icon: "person.2", tint: Theme.Colors.textSecondary, count: nil)
                 sidebarRow(
                     .activity, title: "Аналитика", icon: "square.grid.3x3", tint: Theme.Colors.textSecondary, count: nil
                 )
@@ -149,7 +146,6 @@ struct MacRootView: View {
         .background(Theme.Colors.sidebar)
         .safeAreaInset(edge: .bottom) {
             HStack {
-                SyncIndicator()
                 Spacer()
                 Text(today.formattedEyebrowDate)
                     .font(Theme.Typography.eyebrow)
@@ -254,7 +250,7 @@ struct MacRootView: View {
             Button(role: .destructive) {
                 tagToDelete = tag
             } label: {
-                Label("Удалить категорию", systemImage: "trash")
+                Label("Удалить папку", systemImage: "trash")
             }
         }
     }
@@ -269,7 +265,7 @@ struct MacRootView: View {
 
     @ViewBuilder
     private var detail: some View {
-        switch selection ?? .list(.focus) {
+        switch selection ?? .list(.all) {
         case .list(let scope):
             MacTaskListView(scope: scope.validated(tags: tags), today: today)
         case .activity:
@@ -302,7 +298,7 @@ struct MacRootView: View {
 
     private func deleteTag(_ tag: Tag) {
         if case .list(.tag(let id)) = selection, id == tag.id {
-            selection = .list(.focus)
+            selection = .list(.all)
         }
         modelContext.deleteWithSync(tag)
         modelContext.saveAndSync(delaySeconds: 0.1)

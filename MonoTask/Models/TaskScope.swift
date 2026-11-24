@@ -19,7 +19,8 @@ enum TaskScope: Hashable {
                 task.tags.isEmpty || task.tags.contains { scheduledIds.contains($0.id) }
             }
         case .highPriority:
-            return tasks.filter(\.isHighPriorityToday)
+            return tasks.filter(\.isPriority)
+                .sorted { $0.priority.rank > $1.priority.rank }
         case .tag(let id):
             return tasks.filter { task in task.tags.contains { $0.id == id } }
         }
@@ -30,7 +31,7 @@ enum TaskScope: Hashable {
         case .focus: return "Фокус дня"
         case .all: return "Все задачи"
         case .highPriority: return "Приоритет"
-        case .tag(let id): return tags.first { $0.id == id }?.name ?? "Категория"
+        case .tag(let id): return tags.first { $0.id == id }?.name ?? "Папка"
         }
     }
 
@@ -46,7 +47,7 @@ enum TaskScope: Hashable {
     /// Falls back to `.focus` when the scope points at a context that no longer exists
     func validated(tags: [Tag]) -> TaskScope {
         if case .tag(let id) = self, !tags.contains(where: { $0.id == id }) {
-            return .focus
+            return .all
         }
         return self
     }

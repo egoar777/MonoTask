@@ -1,3 +1,4 @@
+import AuthenticationServices
 import Foundation
 import Observation
 import SwiftData
@@ -7,12 +8,27 @@ import Supabase
 @MainActor
 final class AuthManager {
     static let shared = AuthManager()
+    static let callbackScheme = "com.monotask.ios"
+    private static let emailCallbackURL = URL(string: "\(callbackScheme)://auth-callback")!
+    private static let socialCallbackURL = URL(string: "\(callbackScheme)://oauth-callback")!
+
+    enum SocialProvider: String {
+        case google, apple
+
+        var name: String { self == .google ? "Google" : "Apple" }
+        var supabaseProvider: Provider { self == .google ? .google : .apple }
+    }
+
+    private struct AuthSettings: Decodable {
+        let external: [String: Bool]
+    }
 
     private(set) var userID: UUID?
     private(set) var email: String?
     var activeContainer: ModelContainer?
     var isRestoring = true
     var isBusy = false
+    private(set) var activeSocialProvider: SocialProvider?
     var errorMessage: String?
     var infoMessage: String?
 
@@ -51,7 +67,7 @@ final class AuthManager {
     }
 
     func signIn(email: String, password: String) async {
-        guard let client = SupabaseService.shared.client else { return }
+        guard !isBusy, let client = SupabaseService.shared.client else { return }
         isBusy = true
         errorMessage = nil
         infoMessage = nil
@@ -65,7 +81,7 @@ final class AuthManager {
     }
 
     func signUp(email: String, password: String) async {
-        guard let client = SupabaseService.shared.client else { return }
+        guard !isBusy, let client = SupabaseService.shared.client else { return }
         isBusy = true
         errorMessage = nil
         infoMessage = nil
@@ -74,7 +90,7 @@ final class AuthManager {
             let response = try await client.auth.signUp(
                 email: email,
                 password: password,
-                redirectTo: URL(string: "com.monotask.ios://auth-callback")
+                redirectTo: Self.emailCallbackURL
             )
             if let session = response.session {
                 setSession(session)
@@ -86,8 +102,65 @@ final class AuthManager {
         }
     }
 
+    func signIn(
+        with provider: SocialProvider,
+        launchFlow: @escaping @MainActor @Sendable (URL) async throws -> URL
+    ) async {
+        guard !isBusy else { return }
+        guard let client = SupabaseService.shared.client,
+            let projectURL = SupabaseConfig.shared.cleanUrl
+        else {
+            errorMessage = "Вход через \(provider.name) пока недоступен."
+            return
+        }
+        isBusy = true
+        activeSocialProvider = provider
+        errorMessage = nil
+        infoMessage = nil
+        defer {
+            isBusy = false
+            activeSocialProvider = nil
+        }
+        do {
+            var request = URLRequest(url: projectURL.appending(path: "auth/v1/settings"), timeoutInterval: 10)
+            request.allHTTPHeaderFields = client.headers
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard (response as? HTTPURLResponse)?.statusCode == 200 else {
+                throw URLError(.badServerResponse)
+            }
+            let settings = try JSONDecoder().decode(AuthSettings.self, from: data)
+            guard settings.external[provider.rawValue] == true else {
+                errorMessage = "Вход через \(provider.name) ещё не подключён."
+                return
+            }
+            let session = try await client.auth.signInWithOAuth(
+                provider: provider.supabaseProvider,
+                redirectTo: Self.socialCallbackURL,
+                queryParams: provider == .google ? [("prompt", "select_account")] : [],
+                launchFlow: { url in
+                    let callback = try await launchFlow(url)
+                    guard Self.matchesCallback(callback, expected: Self.socialCallbackURL) else {
+                        throw URLError(.badURL)
+                    }
+                    return callback
+                }
+            )
+            setSession(session)
+        } catch let error as ASWebAuthenticationSessionError where error.code == .canceledLogin {
+            return
+        } catch is CancellationError {
+            return
+        } catch let error as URLError
+            where error.code == .notConnectedToInternet || error.code == .networkConnectionLost
+        {
+            errorMessage = "Нет подключения к интернету. Подключитесь и попробуйте снова."
+        } catch {
+            errorMessage = "Не удалось войти через \(provider.name). Попробуйте ещё раз."
+        }
+    }
+
     func signOut() async {
-        guard let client = SupabaseService.shared.client else { return }
+        guard !isBusy, let client = SupabaseService.shared.client else { return }
         isBusy = true
         errorMessage = nil
         defer { isBusy = false }
@@ -100,15 +173,22 @@ final class AuthManager {
     }
 
     func handleAuthURL(_ url: URL) async {
-        guard url.scheme == "com.monotask.ios", url.host == "auth-callback",
+        guard !isBusy, userID == nil, Self.matchesCallback(url, expected: Self.emailCallbackURL),
             let client = SupabaseService.shared.client
         else { return }
+        isBusy = true
+        defer { isBusy = false }
         do {
             let session = try await client.auth.session(from: url)
             setSession(session)
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = "Не удалось подтвердить адрес. Откройте ссылку из последнего письма на этом устройстве или войдите с паролем."
         }
+    }
+
+    private static func matchesCallback(_ url: URL, expected: URL) -> Bool {
+        url.scheme == expected.scheme && url.host == expected.host && url.path == expected.path
+            && url.user == nil && url.password == nil && url.port == nil
     }
 
     private func setSession(_ session: Session) {

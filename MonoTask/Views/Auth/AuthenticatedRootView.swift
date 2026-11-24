@@ -3,34 +3,175 @@ import SwiftData
 
 struct AuthenticatedRootView: View {
     @Environment(AuthManager.self) private var auth
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
+    @State private var didFinishOnboarding = false
     @State private var container: ModelContainer?
     @State private var containerUserID: UUID?
     @State private var storeError: String?
+    @State private var isShowingSignIn = false
+    @State private var pendingHomeRevealUserID: UUID?
+    #if os(iOS)
+    @State private var isMovingLaunchBrand = false
+    @State private var hasFinishedLaunch = false
+
+    private var isLaunchBrandVisible: Bool {
+        !reduceMotion && !hasFinishedLaunch
+    }
+
+    private var canCompleteLaunch: Bool {
+        showsOnboarding || !auth.isRestoring
+    }
+
+    private var isOpeningWelcome: Bool {
+        !showsOnboarding && !auth.isRestoring && auth.userID == nil
+    }
+    #endif
+
+    private var showsOnboarding: Bool {
+        !hasCompletedOnboarding && !didFinishOnboarding
+    }
 
     var body: some View {
-        Group {
-            if auth.isRestoring {
-                ProgressView("Восстанавливаем вход…")
-            } else if let userID = auth.userID {
-                if containerUserID == userID, let container {
-                    NotificationHostView().modelContainer(container).id(userID)
-                } else if let storeError {
-                    ContentUnavailableView(
-                        "Не удалось открыть данные",
-                        systemImage: "externaldrive.badge.exclamationmark",
-                        description: Text(storeError))
-                } else {
-                    ProgressView("Открываем задачи…")
-                }
-            } else {
-                AuthView()
+        ZStack {
+            if !showsOnboarding {
+                destination
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .transition(destinationEntrance)
+            }
+            if showsOnboarding {
+                onboarding
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .transition(onboardingExit)
+                    .zIndex(1)
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .clipped()
+        #if os(iOS)
+        .opacity(isLaunchBrandVisible && !isOpeningWelcome ? 0 : 1)
+        .animation(
+            reduceMotion || isOpeningWelcome ? nil : .easeInOut(duration: 0.36).delay(0.22),
+            value: isLaunchBrandVisible
+        )
+        .allowsHitTesting(!isLaunchBrandVisible)
+        .accessibilityHidden(isLaunchBrandVisible)
+        .overlayPreferenceValue(AuthBrandBoundsKey.self) { anchor in
+            GeometryReader { geometry in
+                let target = anchor.map { geometry[$0] }
+                let center = CGPoint(x: geometry.size.width / 2, y: geometry.size.height / 2)
+                let destination = target.map { CGPoint(x: $0.midX, y: $0.midY) } ?? center
+                AuthBrandHeader(title: "MonoTask")
+                .frame(width: target?.width)
+                .position(isMovingLaunchBrand ? destination : center)
+            }
+            .opacity(isLaunchBrandVisible ? 1 : 0)
+            .animation(
+                reduceMotion || isOpeningWelcome ? nil : .easeInOut(duration: 0.22),
+                value: isLaunchBrandVisible
+            )
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+        }
+        .task(id: canCompleteLaunch) { await finishLaunch() }
+        #endif
         .background(Theme.Colors.background.ignoresSafeArea())
+        .onChange(of: didFinishOnboarding) { _, finished in
+            if finished { hasCompletedOnboarding = true }
+        }
         .task { await auth.start() }
         .task(id: auth.userID) { await openStoreForCurrentUser() }
     }
+
+    private var onboarding: some View {
+        #if os(iOS)
+        OnboardingView(isReady: !isLaunchBrandVisible, onSkip: skipOnboarding, onFinish: finishOnboarding)
+        #else
+        OnboardingView(onSkip: skipOnboarding, onFinish: finishOnboarding)
+        #endif
+    }
+
+    private var onboardingExit: AnyTransition {
+        .asymmetric(insertion: .identity, removal: reduceMotion ? .opacity : .move(edge: .leading))
+    }
+
+    private var destinationEntrance: AnyTransition {
+        .asymmetric(insertion: reduceMotion ? .opacity : .move(edge: .trailing), removal: .identity)
+    }
+
+    @ViewBuilder
+    private var destination: some View {
+        if auth.isRestoring {
+            ProgressView("Восстанавливаем вход…")
+        } else if auth.userID == nil || isShowingSignIn {
+            #if os(iOS)
+            signInView(isLaunching: isLaunchBrandVisible)
+            #else
+            signInView(isLaunching: false)
+            #endif
+        } else if let userID = auth.userID {
+            if containerUserID == userID, let container {
+                NotificationHostView()
+                    .modelContainer(container)
+                    .opacity(!reduceMotion && pendingHomeRevealUserID == userID ? 0 : 1)
+                    .task { revealHome(for: userID) }
+                    .id(userID)
+            } else if let storeError {
+                ContentUnavailableView(
+                    "Не удалось открыть данные",
+                    systemImage: "externaldrive.badge.exclamationmark",
+                    description: Text(storeError))
+            } else {
+                ProgressView("Открываем задачи…")
+            }
+        }
+    }
+
+    private func skipOnboarding() {
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) { hasCompletedOnboarding = true }
+    }
+
+    private func finishOnboarding() {
+        guard showsOnboarding else { return }
+        withAnimation(reduceMotion ? MonoBrandMotion.fade : MonoBrandMotion.page) {
+            didFinishOnboarding = true
+        }
+    }
+
+    private func signInView(isLaunching: Bool) -> some View {
+        AuthView(isLaunching: isLaunching, departureUserID: auth.userID) {
+            pendingHomeRevealUserID = auth.userID
+            isShowingSignIn = false
+        }
+        .onAppear {
+            if auth.userID == nil { isShowingSignIn = true }
+        }
+    }
+
+    private func revealHome(for userID: UUID) {
+        guard pendingHomeRevealUserID == userID, auth.userID == userID else { return }
+        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.36)) {
+            pendingHomeRevealUserID = nil
+        }
+    }
+
+    #if os(iOS)
+    private func finishLaunch() async {
+        guard canCompleteLaunch, !hasFinishedLaunch else { return }
+        if !reduceMotion { try? await Task.sleep(for: .milliseconds(400)) }
+        guard !Task.isCancelled else { return }
+        if isOpeningWelcome && !reduceMotion {
+            withAnimation(.easeInOut(duration: 0.45)) {
+                isMovingLaunchBrand = true
+            } completion: {
+                hasFinishedLaunch = true
+            }
+        } else {
+            hasFinishedLaunch = true
+        }
+    }
+    #endif
 
     private func openStoreForCurrentUser() async {
         container = nil

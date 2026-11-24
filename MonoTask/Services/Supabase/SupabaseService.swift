@@ -71,7 +71,7 @@ final class SupabaseService {
 
         let key = SupabaseConfig.shared.anonKey.trimmingCharacters(in: .whitespacesAndNewlines)
         let options = SupabaseClientOptions(
-            auth: .init(emitLocalSessionAsInitialSession: true)
+            auth: .init(flowType: .pkce, emitLocalSessionAsInitialSession: true)
         )
         client = SupabaseClient(supabaseURL: url, supabaseKey: key, options: options)
         connectionStatus = .connected

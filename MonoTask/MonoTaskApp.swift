@@ -7,6 +7,11 @@ struct MonoTaskApp: App {
     @State private var auth = AuthManager.shared
 
     init() {
+        #if DEBUG && (targetEnvironment(simulator) || os(macOS))
+        if ProcessInfo.processInfo.arguments.contains("--reset-onboarding") {
+            UserDefaults.standard.removeObject(forKey: "hasCompletedOnboarding")
+        }
+        #endif
         Theme.registerFonts()
         NotificationService.shared.install()
     }
@@ -56,10 +61,9 @@ struct MonoTaskApp: App {
 
     private func syncActiveStore() {
         Task { await SharedListStore.shared.sync() }
-        guard auth.userID != nil, let container = auth.activeContainer,
-            NetworkMonitor.shared.isConnected
-        else { return }
+        guard auth.userID != nil, let container = auth.activeContainer else { return }
         NotificationService.shared.refresh(context: container.mainContext)
+        guard NetworkMonitor.shared.isConnected else { return }
         Task { @MainActor in
             try? await SupabaseSyncService.shared.sync(context: container.mainContext)
         }

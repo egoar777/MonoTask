@@ -337,7 +337,7 @@ final class FloatingNavigationTests: XCTestCase {
         field.typeText("Category selection test")
         app.buttons["capture-category-picker"].tap()
         app.buttons["Проекты"].tap()
-        XCTAssertEqual(app.buttons["capture-category-picker"].label, "Категория: Проекты")
+        XCTAssertEqual(app.buttons["capture-category-picker"].label, "Папка: Проекты")
         app.buttons["Добавить задачу"].tap()
         if app.buttons["Скрыть клавиатуру"].exists { app.buttons["Скрыть клавиатуру"].tap() }
         app.buttons["Закрыть ввод"].tap()
@@ -432,7 +432,7 @@ final class TaskEditingTests: XCTestCase {
         let app = XCUIApplication(bundleIdentifier: "com.monotask")
         app.launchArguments = ["--screenshots", "--settings", "--settings-categories"]
         app.launch()
-        let create = app.buttons["Новая категория"]
+        let create = app.buttons["Новая папка"]
         XCTAssertTrue(create.waitForExistence(timeout: 8))
         create.tap()
         let name = app.textFields["Название"]

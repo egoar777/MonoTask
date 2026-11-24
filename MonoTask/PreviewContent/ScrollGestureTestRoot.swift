@@ -59,7 +59,20 @@ struct ScreenshotPreviewRoot: View {
         let projects = Tag(
             name: "Проекты", colorHex: "#B48CFF", scheduledDays: [.monday, .wednesday, .friday], sortOrder: 1)
         let personal = Tag(name: "Личное", colorHex: "#3DDC97", scheduledDays: [.saturday, .sunday], sortOrder: 2)
+        if ProcessInfo.processInfo.arguments.contains("--folder-drag-persistence") {
+            for (index, tag) in [study, projects, personal].enumerated() {
+                tag.id = UUID(uuidString: String(format: "76000000-0000-0000-0000-%012d", index + 1))!
+            }
+            if ProcessInfo.processInfo.arguments.contains("--reset-folder-drag-order") {
+                UserDefaults.standard.removeObject(forKey: "monotask_classic_folder_order")
+            }
+        }
         for tag in [study, projects, personal] { opened.mainContext.insert(tag) }
+        if ProcessInfo.processInfo.arguments.contains("--folder-drag-review") {
+            for (index, name) in ["Тесты", "Заметки", "Дом", "Работа", "Спорт"].enumerated() {
+                opened.mainContext.insert(Tag(name: name, colorHex: "#FF9233", sortOrder: index + 3))
+            }
+        }
         let samples: [(String, String, Tag, Bool)] = [
             ("Подготовить проект к защите", "Презентация, демо и ответы на вопросы", study, true),
             ("Закончить макет приложения", "Проверить типографику и состояния", projects, true),
@@ -121,7 +134,7 @@ struct ScreenshotPreviewRoot: View {
                 #if os(iOS)
                 .presentationDetents([.height(280), .large])
                 .presentationDragIndicator(.visible)
-                .presentationBackground(Theme.Colors.surfaceElevated)
+                .presentationBackground(Theme.Colors.background)
                 #endif
             }
             .onDisappear {

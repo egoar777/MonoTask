@@ -393,6 +393,7 @@ final class SupabaseSyncService {
                     existing.isHighPriorityToday = remoteTask.isHighPriorityToday
                     existing.completedAt = remoteTask.completedAt
                     existing.dueDate = remoteTask.dueDate
+                    if remoteTask.dueDate == nil { existing.repeatsReminderDaily = false }
                     existing.sortOrder = remoteTask.sortOrder
                     existing.tags = matchedTags
                     existing.updatedAt = remoteTask.updatedAt

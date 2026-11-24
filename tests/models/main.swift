@@ -71,13 +71,44 @@ func run() throws {
     check(
         TaskScope.tag(personal.id).filter(all, scheduledTags: []).map(\.id) == [other.id],
         "Category filter excludes unrelated tasks")
-    check(TaskScope.tag(UUID()).validated(tags: tags) == .focus, "Missing category falls back to focus")
+    check(TaskScope.tag(UUID()).validated(tags: tags) == .all, "Missing category falls back to all tasks")
     check(
         TaskScope.all.defaultTag(tags: tags, scheduledTags: [work]) == nil,
         "Adding to all tasks does not silently assign a category")
     check(
         FocusService.shared.currentFocusTags(allTags: tags, override: personal).first?.id == personal.id,
         "Manual focus override takes precedence")
+    check(task.priority == .high, "Legacy priority flags remain high")
+    for level in Priority.allCases {
+        task.priority = level
+        try context.save()
+        let saved = try ModelContext(container).fetch(FetchDescriptor<TaskItem>()).first { $0.id == task.id }!
+        check(saved.priority == level, "Priority survives disk reload: \(level.rawValue)")
+        check(saved.isHighPriorityToday == (level == .high), "Priority and legacy flag agree")
+    }
+    task.priority = .none
+    check(!task.isHighPriorityToday, "Removing priority clears legacy flag")
+    check(TaskItem(title: "High", priority: .high).isHighPriorityToday, "High priority initializer sets flag")
+    let medium = TaskItem(title: "Medium", priority: .medium)
+    let high = TaskItem(title: "High", priority: .high)
+    let secondMedium = TaskItem(title: "Second medium", priority: .medium)
+    let low = TaskItem(title: "Legacy low", priority: .low)
+    let priorityTasks = [medium, untagged, high, secondMedium, low]
+    check(
+        TaskScope.highPriority.filter(priorityTasks, scheduledTags: []).map(\.id)
+            == [high.id, medium.id, secondMedium.id],
+        "Both priority levels are included, high precedes medium, and equal levels keep their order")
+    context.insert(medium)
+    try context.save()
+    let savedMedium = try ModelContext(container).fetch(FetchDescriptor<TaskItem>()).first { $0.id == medium.id }!
+    check(savedMedium.isPriority && savedMedium.priority == .medium, "Medium stays prioritized after disk reload")
+    medium.priority = .high
+    check(medium.isPriority, "Promoting medium keeps it in priority")
+    medium.priority = .medium
+    check(medium.isPriority, "Demoting high to medium keeps it in priority")
+    medium.priority = .none
+    check(!medium.isPriority, "Removing priority leaves the priority section")
+    context.delete(medium)
     context.delete(task)
     try context.save()
     let subtasks = try context.fetch(FetchDescriptor<SubtaskItem>())

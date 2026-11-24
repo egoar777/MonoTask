@@ -50,7 +50,7 @@ struct TagDTO: Codable, Identifiable, Sendable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.id = try container.decode(UUID.self, forKey: .id)
-        self.name = try container.decodeIfPresent(String.self, forKey: .name) ?? "Категория"
+        self.name = try container.decodeIfPresent(String.self, forKey: .name) ?? "Папка"
         self.colorHex = try container.decodeIfPresent(String.self, forKey: .colorHex) ?? "#6366F1"
         self.iconName = try container.decodeIfPresent(String.self, forKey: .iconName) ?? "tag.fill"
         self.scheduledDays = try container.decodeIfPresent([Int].self, forKey: .scheduledDays) ?? []

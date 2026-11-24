@@ -9,7 +9,7 @@ struct NotificationPreferences: Codable, Equatable, Sendable {
     var morningHour = 9
     var morningMinute = 0
     var weekdays: [Int] = [2, 3, 4, 5, 6]
-    var morningScope = "focus"
+    var morningScope = "all"
     var taskCount = 3
 }
 
@@ -21,6 +21,7 @@ struct ReminderTask: Sendable {
     let priority: Bool
     let tagIDs: [UUID]
     let order: Int
+    var repeatsDaily = false
 }
 
 struct ReminderTag: Sendable {
@@ -35,6 +36,7 @@ struct PlannedNotification: Sendable {
     let body: String
     let date: Date
     let taskID: UUID?
+    var dailyTime: DateComponents? = nil
 }
 
 // Pure planning logic is shared by the app and the executable regression tests.
@@ -48,12 +50,24 @@ enum NotificationPlanner {
         let open = tasks.filter { !$0.done }
         if p.taskReminders {
             for task in open {
-                guard let date = task.date, date > now else { continue }
+                guard let date = task.date else { continue }
+                let dailyTime = task.repeatsDaily
+                    ? DateComponents(hour: calendar.component(.hour, from: date), minute: calendar.component(.minute, from: date), second: 0)
+                    : nil
+                let nextDate: Date
+                if let dailyTime {
+                    guard let next = calendar.nextDate(after: now, matching: dailyTime, matchingPolicy: .strict)
+                    else { continue }
+                    nextDate = next
+                } else {
+                    guard date > now else { continue }
+                    nextDate = date
+                }
                 result.append(
                     PlannedNotification(
                         identifier: "monotask.task.\(task.id.uuidString)",
                         title: "Напоминание", body: p.showPreview ? task.title : "Пора вернуться к задаче в MonoTask.",
-                        date: date, taskID: task.id))
+                        date: nextDate, taskID: task.id, dailyTime: dailyTime))
             }
         }
         if p.morningPlan {
@@ -62,29 +76,20 @@ enum NotificationPlanner {
                     let date = calendar.date(bySettingHour: p.morningHour, minute: p.morningMinute, second: 0, of: day),
                     date > now, p.weekdays.contains(calendar.component(.weekday, from: day))
                 else { continue }
-                let focus = tags.filter { $0.weekdays.contains(calendar.component(.weekday, from: day)) }
-                let focusIDs = Set(focus.map(\.id))
                 let candidates = open.filter { task in
-                    switch p.morningScope {
-                    case "priority": return task.priority
-                    case "all": return true
-                    default:
-                        return focusIDs.isEmpty || task.tagIDs.isEmpty || task.tagIDs.contains { focusIDs.contains($0) }
-                    }
+                    p.morningScope != "priority" || task.priority
                 }.sorted {
                     if $0.priority != $1.priority { return $0.priority }
                     if $0.order != $1.order { return $0.order < $1.order }
                     return $0.id.uuidString < $1.id.uuidString
                 }
-                let focusText =
-                    focus.isEmpty ? "Без заданного фокуса." : "Фокус: \(focus.map(\.name).joined(separator: ", "))."
                 let names = candidates.prefix(max(1, min(p.taskCount, 8))).map(\.title).joined(separator: "; ")
                 let body: String
                 if p.showPreview {
                     body =
-                        "\(focusText) \(candidates.isEmpty ? "Задач пока нет." : "Задач: \(candidates.count). \(names)")"
+                        "\(candidates.isEmpty ? "Задач пока нет." : "Задач: \(candidates.count). \(names)")"
                 } else {
-                    body = "Откройте MonoTask, чтобы посмотреть задачи и фокус дня."
+                    body = "Откройте MonoTask, чтобы посмотреть задачи."
                 }
                 let stamp = calendar.dateComponents([.year, .month, .day], from: day)
                 result.append(
@@ -177,6 +182,7 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
                         try? JSONDecoder().decode(NotificationPreferences.self, from: $0)
                     }
                 } ?? NotificationPreferences()
+            if preferences.morningScope == "focus" { preferences.morningScope = "all" }
             loadingPreferences = false
             UNUserNotificationCenter.current().removeAllDeliveredNotifications()
         }
@@ -190,10 +196,12 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
             errorMessage = error.localizedDescription
             return
         }
+        if let context { CalendarSyncService.shared.sync(context: context) }
         let snapshots = tasks.filter { !TaskDeletionManager.shared.isPending($0) }.map {
             ReminderTask(
                 id: $0.id, title: $0.title, date: $0.dueDate,
-                done: $0.isDone, priority: $0.isHighPriorityToday, tagIDs: $0.tags.map(\.id), order: $0.sortOrder)
+                done: $0.isDone, priority: $0.isPriority, tagIDs: $0.tags.map(\.id), order: $0.sortOrder,
+                repeatsDaily: $0.repeatsReminderDaily)
         }
         let tagSnapshots = tags.map {
             ReminderTag(id: $0.id, name: $0.name, weekdays: $0.scheduledDays.map(\.rawValue))
@@ -251,7 +259,8 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
                 components.timeZone = .current
                 let request = UNNotificationRequest(
                     identifier: plan.identifier, content: content,
-                    trigger: UNCalendarNotificationTrigger(dateMatching: components, repeats: false))
+                    trigger: UNCalendarNotificationTrigger(
+                        dateMatching: plan.dailyTime ?? components, repeats: plan.dailyTime != nil))
                 do {
                     try await center.add(request)
                     pendingCount += 1

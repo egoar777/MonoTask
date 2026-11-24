@@ -12,7 +12,7 @@ enum Theme {
     // MARK: - Colors
     enum Colors {
         // Surfaces, darkest to lightest
-        static let background = Color(hex: "#101110")
+        static let background = Color.black
         static let sidebar = Color(hex: "#171917")
         static let surface = Color(hex: "#1C1E1B")
         static let surfaceElevated = Color(hex: "#242623")
@@ -62,6 +62,9 @@ enum Theme {
         // Keep stored category colours legible against dark surfaces.
         static func tagColor(_ hex: String) -> Color {
             let normalized = normalizedTagHex(hex)
+            guard tagColors.contains(where: { $0.caseInsensitiveCompare(normalized) == .orderedSame }) else {
+                return Color(hex: normalized)
+            }
             var cleaned = normalized.trimmingCharacters(in: .whitespacesAndNewlines)
             if cleaned.hasPrefix("#") { cleaned.removeFirst() }
             guard cleaned.count == 6, let value = UInt32(cleaned, radix: 16) else {
@@ -111,7 +114,7 @@ enum Theme {
         static let editorTitle = Font.title2.weight(.semibold)
         static let title = Font.title3.weight(.semibold)
         static let body = Font.callout
-        static let bodyTracking: CGFloat = -0.2
+        static let bodyTracking: CGFloat = 0
         static let callout = Font.subheadline
         static let caption = Font.caption
         static let section = Font.subheadline.weight(.semibold)
@@ -124,7 +127,13 @@ enum Theme {
 
     // MARK: - Spacing
     enum Spacing {
+        static let xs: CGFloat = 4
+        static let sm: CGFloat = 8
+        static let md: CGFloat = 12
         static let lg: CGFloat = 16
+        static let xxl: CGFloat = 24
+        static let xxxl: CGFloat = 32
+        static let touchTargetMin: CGFloat = 44
         static let screenPadding: CGFloat = 20
     }
 
@@ -142,6 +151,7 @@ enum Theme {
     enum Motion {
         static let standard = Animation.easeInOut(duration: 0.28)
         static let quick = Animation.easeInOut(duration: 0.18)
+        static let taskTextExpansion = Animation.smooth(duration: 0.42)
     }
 }
 

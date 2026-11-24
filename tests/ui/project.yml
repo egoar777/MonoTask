@@ -10,7 +10,7 @@ targets:
     type: bundle.ui-testing
     platform: iOS
     deploymentTarget: '18.0'
-    sources: [ReviewTests.swift]
+    sources: [ReviewTests.swift, ClassicCaptureTests.swift, FeatureUpdateTests.swift, SharedFolderTests.swift, OnboardingTests.swift, TaskSwipeTests.swift, NativeScrollTests.swift, SettingsDesignTests.swift, TaskCompletionTests.swift]
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES

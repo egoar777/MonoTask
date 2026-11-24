@@ -36,6 +36,9 @@ targets:
       path: MonoTask/Resources/Info.plist
       properties:
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleDisplayName: "MonoTask"
+        NSCameraUsageDescription: "Камера нужна для сканирования QR-кода приглашения в общую папку MonoTask. Снимки не сохраняются."
+        NSCalendarsFullAccessUsageDescription: "MonoTask добавляет напоминания в выбранные календари и обновляет или удаляет связанные события при изменении задач."
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         CFBundleURLTypes:
           - CFBundleURLSchemes:
@@ -53,11 +56,11 @@ targets:
     settings:
       base:
         PRODUCT_NAME: MonoTask
-        PRODUCT_BUNDLE_IDENTIFIER: com.monotask
-        "PRODUCT_BUNDLE_IDENTIFIER[sdk=iphoneos*]": com.monotask.ios
-        "PRODUCT_BUNDLE_IDENTIFIER[sdk=macosx*]": com.monotask.macos
-        MARKETING_VERSION: "2.1.1"
-        CURRENT_PROJECT_VERSION: 22
+        PRODUCT_BUNDLE_IDENTIFIER: com.egorkhmylkov.monotask
+        "PRODUCT_BUNDLE_IDENTIFIER[sdk=iphoneos*]": com.egorkhmylkov.monotask
+        "PRODUCT_BUNDLE_IDENTIFIER[sdk=macosx*]": com.egorkhmylkov.monotask.macos
+        MARKETING_VERSION: "1.3"
+        CURRENT_PROJECT_VERSION: 121
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         ASSETCATALOG_COMPILER_GENERATE_ASSET_SYMBOLS: NO
