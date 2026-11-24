@@ -1,64 +1,59 @@
 <div align="center">
 
-<img src="MonoTask/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png" width="96" alt="Иконка MonoTask" />
+<img src="MonoTask/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png" width="96" alt="Чёрная иконка MonoTask Classic" />
 
-# MonoTask
+# MonoTask Classic
 
-### Главное — в фокусе.
-
-MonoTask Classic 1.3 для iPhone и Mac.
 Личные и общие папки, быстрый ввод задач и история выполнения.
 
-![iOS 18+](https://img.shields.io/badge/iOS-18%2B-0B0B0A?style=flat-square&labelColor=1B1B18&color=C8FF2E)
-![macOS 15+](https://img.shields.io/badge/macOS-15%2B-0B0B0A?style=flat-square&labelColor=1B1B18&color=C8FF2E)
-![Swift 6](https://img.shields.io/badge/Swift-6-0B0B0A?style=flat-square&labelColor=1B1B18&color=FF48A4)
-![SwiftUI](https://img.shields.io/badge/UI-SwiftUI-0B0B0A?style=flat-square&labelColor=1B1B18&color=B48CFF)
+[![MonoTask Classic 1.3](https://img.shields.io/badge/MonoTask_Classic-1.3-C8FF2E?style=flat-square&labelColor=1B1B18)](https://github.com/egoar777/MonoTask/tree/v1.3)
+![iOS 18+](https://img.shields.io/badge/iOS-18%2B-343432?style=flat-square&labelColor=1B1B18)
+![macOS 15+](https://img.shields.io/badge/macOS-15%2B-343432?style=flat-square&labelColor=1B1B18)
+![SwiftUI](https://img.shields.io/badge/SwiftUI-Swift_6-343432?style=flat-square&labelColor=1B1B18)
 
-[Экраны](#экраны) · [Возможности](#возможности) · [Запуск](#сборка) · [Архитектура](docs/ARCHITECTURE.md)
+[Экраны](#экраны) · [Возможности](#возможности) · [Сборка](#сборка) · [Изменения](CHANGELOG.md)
 
 </div>
 
----
-
 ## Экраны
+
+Скриншоты MonoTask Classic 1.3 с демонстрационными данными. Нажмите на изображение, чтобы открыть его в полном размере.
 
 ### iPhone
 
-<p>
-<img src="docs/screenshots/ios-today.png" width="30%" alt="Задачи MonoTask 2.1.1" />
-<img src="docs/screenshots/ios-analytics.png" width="30%" alt="Аналитика MonoTask 2.1.1" />
-<img src="docs/screenshots/ios-settings.png" width="30%" alt="Настройки MonoTask 2.1.1" />
-</p>
-
-Скриншоты версии 2.1.1 из симулятора iPhone с демонстрационными данными. Нажмите на изображение, чтобы открыть в полном размере.
+<table>
+  <tr>
+    <th>Папки</th>
+    <th>Прогресс за месяц</th>
+    <th>Настройки</th>
+  </tr>
+  <tr>
+    <td><a href="docs/screenshots/ios-today.png"><img src="docs/screenshots/ios-today.png" width="240" alt="Личные и общие папки на iPhone" /></a></td>
+    <td><a href="docs/screenshots/ios-analytics.png"><img src="docs/screenshots/ios-analytics.png" width="240" alt="Прогресс за месяц и статистика по папкам на iPhone" /></a></td>
+    <td><a href="docs/screenshots/ios-settings.png"><img src="docs/screenshots/ios-settings.png" width="240" alt="Настройки папок, календарей и вида списка на iPhone" /></a></td>
+  </tr>
+</table>
 
 ### Mac
 
-**Задачи и фокус дня, версия 2.1.1** — боковое меню, категории и быстрый ввод с клавиатуры.
+[![Папки и нижняя панель навигации на Mac](docs/screenshots/mac-today.jpg)](docs/screenshots/mac-today.jpg)
 
-[![MonoTask на Mac — задачи и фокус дня](docs/screenshots/mac-today.jpg)](docs/screenshots/mac-today.jpg)
-
-**Аналитика** — календарь активности и статистика по категориям.
-
-[![MonoTask на Mac — аналитика](docs/screenshots/mac-activity.jpg)](docs/screenshots/mac-activity.jpg)
-
-**Настройки** — аккаунт, расписание, уведомления и вид списка.
-
-[![MonoTask 2.1.1 на Mac — настройки](docs/screenshots/mac-settings.jpg)](docs/screenshots/mac-settings.jpg)
-
-Скриншоты Mac показывают предыдущий интерфейс с боковым меню и демонстрационными данными.
-
-## Совместная работа
-
-Общие списки для разных аккаунтов: приглашения по ссылке или коду, участники, ответственные, заметки, подзадачи и синхронизация с защитой от конфликтов. Личные задачи остаются приватными. [Совместная работа](docs/SHARED-LISTS.md) · [Изменения](CHANGELOG.md).
-
-<img src="docs/screenshots/ios-shared-list.png" width="320" alt="Общий список MonoTask 2.1 с ответственными и подзадачами" />
+<table>
+  <tr>
+    <th>Прогресс за месяц</th>
+    <th>Настройки</th>
+  </tr>
+  <tr>
+    <td><a href="docs/screenshots/mac-activity.jpg"><img src="docs/screenshots/mac-activity.jpg" width="360" alt="Прогресс за месяц и статистика по папкам на Mac" /></a></td>
+    <td><a href="docs/screenshots/mac-settings.jpg"><img src="docs/screenshots/mac-settings.jpg" width="360" alt="Настройки папок, календарей и вида списка на Mac" /></a></td>
+  </tr>
+</table>
 
 ## Возможности
 
 | | Что умеет MonoTask |
 | :--- | :--- |
-| **Совместная работа** | Общие списки, приглашения на 72 часа, участники и ответственные. Правки без сети сохраняются в очередь. |
+| **Совместная работа** | Общие папки, участники, ответственные и приглашения по ссылке или QR-коду. Правки без сети сохраняются в очередь. [Совместная работа](docs/SHARED-LISTS.md). |
 | **Папки** | Личные папки с цветами и значками. В папке «Все задачи» видны задачи из всех личных папок. |
 | **Задачи** | Заметки, подзадачи, три уровня приоритета и перестановка в списке. |
 | **Быстрый ввод** | На iPhone «+» раскрывает строку, нажатие на поле открывает клавиатуру. На Mac кнопку «+» дополняет `⌘N`, которое сразу переводит фокус на поле ввода. |
