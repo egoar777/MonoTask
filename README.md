@@ -17,37 +17,36 @@
 
 ## Экраны
 
-Скриншоты MonoTask Classic 1.3 с демонстрационными данными. Нажмите на изображение, чтобы открыть его в полном размере.
+Скриншоты MonoTask Classic 1.3 с демонстрационными данными. Аналитика показывает полную неделю, с понедельника по воскресенье. Нажмите на изображение, чтобы открыть его в полном размере.
 
 ### iPhone
 
 <table>
   <tr>
     <th>Папки</th>
-    <th>Прогресс за месяц</th>
+    <th>Прогресс за неделю</th>
     <th>Настройки</th>
   </tr>
   <tr>
     <td><a href="docs/screenshots/ios-today.png"><img src="docs/screenshots/ios-today.png" width="240" alt="Личные и общие папки на iPhone" /></a></td>
-    <td><a href="docs/screenshots/ios-analytics.png"><img src="docs/screenshots/ios-analytics.png" width="240" alt="Прогресс за месяц и статистика по папкам на iPhone" /></a></td>
+    <td><a href="docs/screenshots/ios-analytics.png"><img src="docs/screenshots/ios-analytics.png" width="240" alt="Прогресс за неделю и статистика по папкам на iPhone" /></a></td>
     <td><a href="docs/screenshots/ios-settings.png"><img src="docs/screenshots/ios-settings.png" width="240" alt="Настройки папок, календарей и вида списка на iPhone" /></a></td>
   </tr>
 </table>
 
 ### Mac
 
-[![Папки и нижняя панель навигации на Mac](docs/screenshots/mac-today.jpg)](docs/screenshots/mac-today.jpg)
+**Папки**
 
-<table>
-  <tr>
-    <th>Прогресс за месяц</th>
-    <th>Настройки</th>
-  </tr>
-  <tr>
-    <td><a href="docs/screenshots/mac-activity.jpg"><img src="docs/screenshots/mac-activity.jpg" width="360" alt="Прогресс за месяц и статистика по папкам на Mac" /></a></td>
-    <td><a href="docs/screenshots/mac-settings.jpg"><img src="docs/screenshots/mac-settings.jpg" width="360" alt="Настройки папок, календарей и вида списка на Mac" /></a></td>
-  </tr>
-</table>
+[![Личные и общие папки на Mac](docs/screenshots/mac-today.jpg)](docs/screenshots/mac-today.jpg)
+
+**Прогресс за неделю**
+
+[![Прогресс за неделю и статистика по папкам на Mac](docs/screenshots/mac-activity.jpg)](docs/screenshots/mac-activity.jpg)
+
+**Настройки**
+
+[![Настройки папок, календарей и вида списка на Mac](docs/screenshots/mac-settings.jpg)](docs/screenshots/mac-settings.jpg)
 
 ## Возможности
 
