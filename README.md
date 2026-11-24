@@ -1,12 +1,12 @@
 <div align="center">
 
-<img src="MonoTask/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png" width="96" alt="Чёрная иконка MonoTask Classic" />
+<img src="MonoTask/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png" width="96" alt="Чёрная иконка MonoTask" />
 
-# MonoTask Classic
+# MonoTask
 
 Личные и общие папки, быстрый ввод задач и история выполнения.
 
-[![MonoTask Classic 1.3](https://img.shields.io/badge/MonoTask_Classic-1.3-C8FF2E?style=flat-square&labelColor=1B1B18)](https://github.com/egoar777/MonoTask/tree/v1.3)
+[![MonoTask 1.3](https://img.shields.io/badge/MonoTask-1.3-C8FF2E?style=flat-square&labelColor=1B1B18)](https://github.com/egoar777/MonoTask/tree/v1.3)
 ![iOS 18+](https://img.shields.io/badge/iOS-18%2B-343432?style=flat-square&labelColor=1B1B18)
 ![macOS 15+](https://img.shields.io/badge/macOS-15%2B-343432?style=flat-square&labelColor=1B1B18)
 ![SwiftUI](https://img.shields.io/badge/SwiftUI-Swift_6-343432?style=flat-square&labelColor=1B1B18)
@@ -17,7 +17,7 @@
 
 ## Экраны
 
-Скриншоты MonoTask Classic 1.3 с демонстрационными данными. Аналитика показывает полную неделю, с понедельника по воскресенье. Нажмите на изображение, чтобы открыть его в полном размере.
+Скриншоты MonoTask 1.3 с демонстрационными данными. Аналитика показывает полную неделю, с понедельника по воскресенье. Нажмите на изображение, чтобы открыть его в полном размере.
 
 ### iPhone
 
